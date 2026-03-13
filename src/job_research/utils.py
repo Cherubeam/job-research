@@ -7,9 +7,17 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 
-def create_cache_key(board: str, keywords: str, location: str) -> str:
+def create_cache_key(
+    board: str,
+    keywords: str,
+    location: str,
+    work_type: str = "",
+    seniority_level: str = "",
+    salary_min: int = 0,
+    salary_max: int = 0,
+) -> str:
     """Create a cache key from search parameters"""
-    key_str = f"{board}:{keywords}:{location}"
+    key_str = f"{board}:{keywords}:{location}:{work_type}:{seniority_level}:{salary_min}:{salary_max}"
     return hashlib.md5(key_str.encode()).hexdigest()
 
 

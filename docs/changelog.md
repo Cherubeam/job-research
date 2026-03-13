@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Cache key now includes work_type, seniority_level, and salary range so different filter combinations no longer return stale cached results
+
 ## [0.1.0] — 2026-03-13
 
 ### Added

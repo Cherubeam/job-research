@@ -48,7 +48,15 @@ class ClaudeScraper:
     ) -> list[JobListing]:
         """Search for jobs matching *params*, using a local cache to avoid repeat API calls."""
         try:
-            cache_key = create_cache_key("claude_web_search", params.keywords, params.location)
+            cache_key = create_cache_key(
+                "claude_web_search",
+                params.keywords,
+                params.location,
+                work_type=params.work_type.value,
+                seniority_level=params.seniority_level.value,
+                salary_min=params.salary_minimum,
+                salary_max=params.salary_maximum,
+            )
             cached = load_cache(cache_dir, cache_key)
             if cached is not None:
                 logger.info("Cache hit for key %s", cache_key)

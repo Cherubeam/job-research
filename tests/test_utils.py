@@ -30,6 +30,24 @@ def test_create_cache_key_differs_on_different_inputs():
     assert key2 != key3
 
 
+def test_create_cache_key_differs_on_work_type():
+    key1 = create_cache_key("board", "AI Engineer", "Berlin", work_type="Remote only")
+    key2 = create_cache_key("board", "AI Engineer", "Berlin", work_type="Onsite only")
+    assert key1 != key2
+
+
+def test_create_cache_key_differs_on_seniority():
+    key1 = create_cache_key("board", "AI Engineer", "Berlin", seniority_level="Junior")
+    key2 = create_cache_key("board", "AI Engineer", "Berlin", seniority_level="Senior")
+    assert key1 != key2
+
+
+def test_create_cache_key_differs_on_salary():
+    key1 = create_cache_key("board", "AI Engineer", "Berlin", salary_min=50000, salary_max=100000)
+    key2 = create_cache_key("board", "AI Engineer", "Berlin", salary_min=80000, salary_max=150000)
+    assert key1 != key2
+
+
 def test_save_and_load_cache_roundtrip(tmp_path):
     data = [{"title": "AI Engineer", "company": "TechCorp"}]
     key = "test_key"
