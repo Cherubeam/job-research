@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from job_research.analyzer import JobListing
-from job_research.config import JobSearchParams, WorkType
+from job_research.config import JobBoardConfig, JobSearchParams, WorkType
 from job_research.scraper import ClaudeScraper
 
 
@@ -100,6 +100,16 @@ def test_build_search_query_contains_keywords(scraper, sample_job_search_params)
 def test_build_search_query_contains_job_boards(scraper, sample_job_search_params):
     query = scraper._build_search_query(sample_job_search_params)
     assert "stepstone.de" in query
+    assert "linkedin.com" in query
+    assert "arbeitsagentur.de" in query
+
+
+def test_disabled_board_excluded_from_query(sample_job_search_params):
+    board_config = JobBoardConfig(search_stepstone=False)
+    with patch("job_research.scraper.anthropic.Anthropic"):
+        s = ClaudeScraper(api_key="sk-test", board_config=board_config)
+    query = s._build_search_query(sample_job_search_params)
+    assert "stepstone.de" not in query
     assert "linkedin.com" in query
 
 

@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Replace job board list with arbeitsagentur.de (Germany's largest job portal); remove jobborse.de, wellfound, remote_rocketship, gruenderszene.de
+- Wire JobBoardConfig toggles to scraper so env vars actually enable/disable boards
+
 ### Fixed
 - Cache key now includes work_type, seniority_level, and salary range so different filter combinations no longer return stale cached results
 

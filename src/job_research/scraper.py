@@ -11,32 +11,47 @@ from typing import Optional
 import anthropic
 
 from job_research.analyzer import JobListing
-from job_research.config import JobSearchParams
+from job_research.config import JobBoardConfig, JobSearchParams
 from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
 
-_JOB_BOARDS = [
-    "stepstone.de",
-    "indeed.de",
-    "linkedin.com",
-    "xing.com",
-    "monster.de",
-    "jobborse.de",
-    "honeypot.io",
-    "startup.jobs",
-    "gruenderszene.de",
-]
+_JOB_BOARD_MAP: dict[str, str] = {
+    "search_stepstone": "stepstone.de",
+    "search_indeed": "indeed.de",
+    "search_linkedin": "linkedin.com",
+    "search_xing": "xing.com",
+    "search_monster": "monster.de",
+    "search_honeypot": "honeypot.io",
+    "search_startups": "startup.jobs",
+    "search_arbeitsagentur": "arbeitsagentur.de",
+}
+
+
+def get_active_boards(board_config: JobBoardConfig) -> list[str]:
+    """Return domain list for boards that are enabled in *board_config*."""
+    return [
+        domain
+        for field_name, domain in _JOB_BOARD_MAP.items()
+        if getattr(board_config, field_name, False)
+    ]
 
 
 class ClaudeScraper:
     """Searches for job listings using the Claude API with the web_search_20250305 tool."""
 
-    def __init__(self, api_key: str, model: str = "claude-opus-4-6", max_jobs: int = 20) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-opus-4-6",
+        max_jobs: int = 20,
+        board_config: Optional[JobBoardConfig] = None,
+    ) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
         self._max_jobs = max_jobs
         self._last_call_time: float = 0.0
+        self._boards = get_active_boards(board_config or JobBoardConfig())
 
     # ------------------------------------------------------------------ public
 
@@ -82,7 +97,7 @@ class ClaudeScraper:
         if params.work_type.value not in ("Any",):
             query_parts.append(params.work_type.value)
 
-        site_clause = " OR ".join(f"site:{b}" for b in _JOB_BOARDS)
+        site_clause = " OR ".join(f"site:{b}" for b in self._boards)
         instruction = (
             f"Find approximately {self._max_jobs} job listings from German job boards. "
             "Return results as a JSON array where each element has the fields: "

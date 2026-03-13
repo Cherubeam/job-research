@@ -19,6 +19,7 @@ try:
             api_key=_config.claude_api_key,
             model=_config.claude_model,
             max_jobs=_config.max_jobs_per_search,
+            board_config=_config.job_boards,
         )
 except Exception:
     logger.exception("Failed to initialize ClaudeScraper")
@@ -196,14 +197,13 @@ def create_ui() -> gr.Blocks:
 
                 ### Job Boards Searched
                 - StepStone.de
-                - LinkedIn
                 - Indeed.de
+                - LinkedIn
                 - XING
-                - Honeypot.io
-                - Jobbörse.de
                 - Monster.de
+                - Honeypot.io
                 - Startup.jobs
-                - Gründerszene.de
+                - Arbeitsagentur.de
 
                 ### Tips
                 1. Use broad keywords first to see the market landscape

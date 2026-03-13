@@ -59,14 +59,13 @@ class JobSearchParams:
 class JobBoardConfig:
     """Configuration for job board searches"""
     search_stepstone: bool = True
-    search_linkedin: bool = True
     search_indeed: bool = True
+    search_linkedin: bool = True
     search_xing: bool = True
+    search_monster: bool = True
     search_honeypot: bool = True
-    search_jobborse: bool = True
     search_startups: bool = True
-    search_wellfound: bool = True
-    search_remote_rocketship: bool = True
+    search_arbeitsagentur: bool = True
 
 
 @dataclass
@@ -110,14 +109,13 @@ class Config:
 
         job_boards = JobBoardConfig(
             search_stepstone=os.getenv("SEARCH_STEPSTONE", "true").lower() == "true",
-            search_linkedin=os.getenv("SEARCH_LINKEDIN", "true").lower() == "true",
             search_indeed=os.getenv("SEARCH_INDEED", "true").lower() == "true",
+            search_linkedin=os.getenv("SEARCH_LINKEDIN", "true").lower() == "true",
             search_xing=os.getenv("SEARCH_XING", "true").lower() == "true",
+            search_monster=os.getenv("SEARCH_MONSTER", "true").lower() == "true",
             search_honeypot=os.getenv("SEARCH_HONEYPOT", "true").lower() == "true",
-            search_jobborse=os.getenv("SEARCH_JOBBORSE", "true").lower() == "true",
             search_startups=os.getenv("SEARCH_STARTUPS", "true").lower() == "true",
-            search_wellfound=os.getenv("SEARCH_WELLFOUND", "true").lower() == "true",
-            search_remote_rocketship=os.getenv("SEARCH_REMOTE_ROCKETSHIP", "true").lower() == "true",
+            search_arbeitsagentur=os.getenv("SEARCH_ARBEITSAGENTUR", "true").lower() == "true",
         )
 
         output = OutputConfig(
@@ -167,10 +165,13 @@ class Config:
             },
             "job_boards": {
                 "search_stepstone": self.job_boards.search_stepstone,
-                "search_linkedin": self.job_boards.search_linkedin,
                 "search_indeed": self.job_boards.search_indeed,
+                "search_linkedin": self.job_boards.search_linkedin,
                 "search_xing": self.job_boards.search_xing,
+                "search_monster": self.job_boards.search_monster,
                 "search_honeypot": self.job_boards.search_honeypot,
+                "search_startups": self.job_boards.search_startups,
+                "search_arbeitsagentur": self.job_boards.search_arbeitsagentur,
             },
             "output": {
                 "output_format": self.output.output_format.value,
