@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- File export: search results are saved to `data/results/` with timestamped filenames
+- Download button in Results tab to retrieve saved report files
+
 ### Changed
 - Replace job board list with arbeitsagentur.de (Germany's largest job portal); remove jobborse.de, wellfound, remote_rocketship, gruenderszene.de
 - Wire JobBoardConfig toggles to scraper so env vars actually enable/disable boards

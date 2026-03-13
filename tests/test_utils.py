@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from job_research.utils import (
     create_cache_key,
+    generate_output_filename,
     save_cache,
     load_cache,
     format_salary,
@@ -84,6 +85,21 @@ def test_format_salary_with_values():
 def test_format_salary_missing():
     assert format_salary(None, None) == "N/A"
     assert format_salary(70000, None) == "N/A"
+
+
+def test_generate_output_filename_format():
+    name = generate_output_filename("job_search", "md")
+    assert name.startswith("job_search_")
+    assert name.endswith(".md")
+    # Timestamp part: YYYY-MM-DD_HHMMSS
+    parts = name.removeprefix("job_search_").removesuffix(".md")
+    assert len(parts) == len("2026-03-13_143000")
+
+
+def test_generate_output_filename_csv():
+    name = generate_output_filename("report", "csv")
+    assert name.startswith("report_")
+    assert name.endswith(".csv")
 
 
 def test_extract_number_from_text():

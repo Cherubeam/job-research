@@ -67,6 +67,12 @@ def format_salary(min_salary: Optional[int], max_salary: Optional[int], currency
     return f"{currency} {min_salary:,} - {max_salary:,}"
 
 
+def generate_output_filename(prefix: str = "job_search", ext: str = "md") -> str:
+    """Generate a timestamped output filename."""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    return f"{prefix}_{timestamp}.{ext}"
+
+
 def extract_number_from_text(text: str) -> Optional[int]:
     """Extract first number from text"""
     import re

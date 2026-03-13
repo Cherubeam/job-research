@@ -2,12 +2,14 @@
 
 import logging
 import os
+from pathlib import Path
 
 import gradio as gr
 
 from job_research.config import Config, SeniorityLevel, WorkType, OutputFormat
 from job_research.analyzer import JobAnalyzer
 from job_research.scraper import ClaudeScraper
+from job_research.utils import generate_output_filename
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +35,14 @@ def run_job_research(
     salary_min: int,
     salary_max: int,
     output_format: str,
-) -> tuple[str, str]:
-    """Run job research with given parameters. Returns (status_message, results)."""
+) -> tuple[str, str, str | None]:
+    """Run job research with given parameters. Returns (status, report, filepath)."""
     try:
         if not keywords.strip():
-            return ("Error", "Keywords cannot be empty")
+            return ("Error", "Keywords cannot be empty", None)
 
         if salary_min > salary_max:
-            return ("Error", "Minimum salary cannot be greater than maximum")
+            return ("Error", "Minimum salary cannot be greater than maximum", None)
 
         if _scraper is None:
             return (
@@ -50,6 +52,7 @@ def run_job_research(
                 "1. Copy .env.example to .env\n"
                 "2. Set CLAUDE_API_KEY=your-key\n"
                 "3. Restart the app",
+                None,
             )
 
         config = Config()
@@ -72,22 +75,32 @@ def run_job_research(
                 "No results found",
                 "No job listings found for the given search parameters.\n\n"
                 "Try broadening your search (e.g., different keywords or location).",
+                None,
             )
 
         analyzer = JobAnalyzer()
         analyzer.add_listings(listings)
 
+        ext = "csv" if output_format == "csv" else "md"
         if output_format == "markdown":
             report = analyzer.generate_markdown_report(f"Job Search Results: {keywords}")
         else:
             report = analyzer.generate_csv_report()
 
-        status = f"✓ Search completed! Found {analyzer.get_total_count()} listings."
-        return (status, report)
+        # Save report to file
+        output_dir = _config.output.output_directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filename = generate_output_filename("job_search", ext)
+        filepath = output_dir / filename
+        filepath.write_text(report, encoding="utf-8")
+        logger.info("Report saved to %s", filepath)
+
+        status = f"Search completed! Found {analyzer.get_total_count()} listings. Saved to {filename}"
+        return (status, report, str(filepath))
 
     except Exception as e:
         logger.exception("run_job_research failed")
-        return (f"Error: {str(e)}", "")
+        return (f"Error: {str(e)}", "", None)
 
 
 def create_ui() -> gr.Blocks:
@@ -171,12 +184,10 @@ def create_ui() -> gr.Blocks:
                     elem_classes="results-box",
                 )
 
-                with gr.Row():
-                    gr.Button("Copy Results").click(
-                        lambda x: x,
-                        inputs=results_output,
-                        outputs=results_output,
-                    )
+                download_file = gr.File(
+                    label="Download Results",
+                    visible=False,
+                )
 
             with gr.Tab("Info"):
                 gr.Markdown("""
@@ -192,6 +203,7 @@ def create_ui() -> gr.Blocks:
                 - Search across multiple job boards (StepStone, LinkedIn, Indeed, XING, etc.)
                 - Filter by location, salary, seniority, and work type
                 - Generate reports in Markdown or CSV format
+                - Download results as files for offline use
                 - Salary analysis and market insights
                 - Smart caching (24h) to reduce API costs
 
@@ -215,7 +227,7 @@ def create_ui() -> gr.Blocks:
         search_btn.click(
             fn=run_job_research,
             inputs=[keywords, location, work_type, seniority, salary_min, salary_max, output_format],
-            outputs=[status_output, results_output],
+            outputs=[status_output, results_output, download_file],
         )
 
     return demo
