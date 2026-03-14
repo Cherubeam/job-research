@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Download button in Results tab to retrieve saved report files
 
 ### Changed
+- Switch default model from `claude-opus-4-6` to `claude-haiku-4-5-20251001` (~60x cheaper, sufficient for web search + JSON extraction)
+- Make `model` parameter required in `ClaudeScraper.__init__` (no more duplicate default)
 - Replace job board list with arbeitsagentur.de (Germany's largest job portal); remove jobborse.de, wellfound, remote_rocketship, gruenderszene.de
 - Wire JobBoardConfig toggles to scraper so env vars actually enable/disable boards
 

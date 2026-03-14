@@ -13,7 +13,7 @@ from job_research.scraper import ClaudeScraper
 @pytest.fixture
 def scraper() -> ClaudeScraper:
     with patch("job_research.scraper.anthropic.Anthropic"):
-        return ClaudeScraper(api_key="sk-test", model="claude-opus-4-6", max_jobs=10)
+        return ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", max_jobs=10)
 
 
 # ----------------------------------------------------------------- salary norm
@@ -107,7 +107,7 @@ def test_build_search_query_contains_job_boards(scraper, sample_job_search_param
 def test_disabled_board_excluded_from_query(sample_job_search_params):
     board_config = JobBoardConfig(search_stepstone=False)
     with patch("job_research.scraper.anthropic.Anthropic"):
-        s = ClaudeScraper(api_key="sk-test", board_config=board_config)
+        s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config)
     query = s._build_search_query(sample_job_search_params)
     assert "stepstone.de" not in query
     assert "linkedin.com" in query

@@ -64,7 +64,7 @@ Edit `.env`:
 CLAUDE_API_KEY=sk-ant-...
 
 # Optional
-CLAUDE_MODEL=claude-opus-4-6
+CLAUDE_MODEL=claude-haiku-4-5-20251001
 MAX_JOBS_PER_SEARCH=20
 JOB_KEYWORDS=AI Engineer
 LOCATION=All of Germany

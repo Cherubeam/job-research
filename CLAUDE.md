@@ -35,7 +35,7 @@ src/ui/
 
 ```bash
 CLAUDE_API_KEY=      # Required — scraper won't work without it
-CLAUDE_MODEL=claude-opus-4-6   # Optional, default: claude-opus-4-6
+CLAUDE_MODEL=claude-haiku-4-5-20251001  # Optional, default: claude-haiku-4-5-20251001
 MAX_JOBS_PER_SEARCH=20         # Optional, default: 20
 ```
 

@@ -117,7 +117,7 @@ Handles multiple formats:
 
 ```bash
 CLAUDE_API_KEY=sk-ant-...     # Required
-CLAUDE_MODEL=claude-opus-4-6  # Optional, defaults to opus-4-6
+CLAUDE_MODEL=claude-haiku-4-5-20251001  # Optional, defaults to opus-4-6
 MAX_JOBS_PER_SEARCH=20        # Optional, default 20
 CACHE_DURATION_HOURS=24       # Optional
 ```
@@ -127,7 +127,7 @@ CACHE_DURATION_HOURS=24       # Optional
 Added to `Config` in `config.py`:
 ```python
 claude_api_key: Optional[str] = None
-claude_model: str = "claude-opus-4-6"
+claude_model: str = "claude-haiku-4-5-20251001"
 max_jobs_per_search: int = 20
 ```
 
@@ -138,7 +138,7 @@ max_jobs_per_search: int = 20
 **Typical search (2 API calls):**
 - Input: ~600 tokens (query + web results context)
 - Output: ~1500 tokens (parsed JSON listings)
-- Cost: ~$0.02-0.05 per search at opus-4-6 pricing
+- Cost: ~$0.001-0.003 per search at haiku-4-5 pricing
 
 **Monthly estimate (1-2 users with caching):**
 - Conservative (50 searches/month): ~$1-2

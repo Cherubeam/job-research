@@ -90,7 +90,7 @@ class Config:
     output: OutputConfig = field(default_factory=OutputConfig)
     verbose: bool = False
     claude_api_key: Optional[str] = None
-    claude_model: str = "claude-opus-4-6"
+    claude_model: str = "claude-haiku-4-5-20251001"
     max_jobs_per_search: int = 20
 
     @classmethod
@@ -130,7 +130,7 @@ class Config:
             output=output,
             verbose=os.getenv("VERBOSE", "false").lower() == "true",
             claude_api_key=os.getenv("CLAUDE_API_KEY"),
-            claude_model=os.getenv("CLAUDE_MODEL", "claude-opus-4-6"),
+            claude_model=os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
             max_jobs_per_search=int(os.getenv("MAX_JOBS_PER_SEARCH", "20")),
         )
 

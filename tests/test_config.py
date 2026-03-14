@@ -11,7 +11,7 @@ def test_config_default_construction():
     config = Config()
     assert config.verbose is False
     assert config.claude_api_key is None
-    assert config.claude_model == "claude-opus-4-6"
+    assert config.claude_model == "claude-haiku-4-5-20251001"
     assert config.max_jobs_per_search == 20
     assert isinstance(config.search_params, JobSearchParams)
 

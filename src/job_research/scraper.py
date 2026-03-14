@@ -43,7 +43,7 @@ class ClaudeScraper:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-opus-4-6",
+        model: str,
         max_jobs: int = 20,
         board_config: Optional[JobBoardConfig] = None,
     ) -> None:
