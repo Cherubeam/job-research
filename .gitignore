@@ -38,7 +38,6 @@ MANIFEST
 *.swp
 *.swo
 *~
-.DS_Store
 .project
 .pydevproject
 
@@ -70,8 +69,16 @@ logs/
 .dmypy.json
 dmypy.json
 
-# Mac
+# OS
 .DS_Store
+Thumbs.db
+
+# Secrets / certificates
+*.pem
+*.key
+
+# Jupyter
+.ipynb_checkpoints/
 
 # Project specific
 *.bak

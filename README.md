@@ -1,15 +1,24 @@
+![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-orange)
+
 # Job Research Tool
 
-A Python-based job market research tool with a Gradio UI for searching and analyzing AI/ML job listings across German job boards. Uses the **Anthropic Claude API** (`web_search_20250305` tool) for all web searching — no direct scraping, no blocking risk.
+AI-powered job market research tool for searching and analyzing job listings across German job boards.
+
+## Overview
+
+Job Research Tool aggregates job listings from major German job boards through two independent scraper backends — one powered by Anthropic's Claude API with web search, the other by the python-jobspy library. A quality pipeline handles relevance filtering, deduplication, and salary normalization before results are analyzed and displayed in an interactive Gradio web UI. Searches are cached for 24 hours to minimize API costs on repeated queries.
 
 ## Features
 
-- **Claude-Powered Search**: Delegates job searching to Anthropic's infrastructure via the `web_search_20250305` tool
-- **Job Board Search**: Indeed.de by default (largest German aggregator); other boards opt-in via UI
-- **Flexible Filters**: Filter by location, salary range, seniority level, and work type
+- **Dual Scraper Backends**: Claude API web search (`web_search_20250305`) and python-jobspy for broad coverage
+- **Job Board Support**: Indeed.de, LinkedIn, and other German job boards — selectable per search
+- **Quality Pipeline**: Relevance scoring, cross-source deduplication, and salary normalization
+- **Multi-Source Interleaving**: Results from different boards are round-robin mixed for balanced representation
+- **Flexible Filters**: Location, salary range, seniority level, and work type
 - **Data Analysis**: Automatic salary analysis, job distribution, and market insights
-- **Multiple Export Formats**: Generate reports in Markdown or CSV
-- **Multi-Source Interleaving**: Results from Indeed and LinkedIn are round-robin mixed for balanced representation (configurable)
+- **Multiple Export Formats**: Reports in Markdown or CSV
 - **Smart Caching**: 24h cache reduces API calls for repeated searches
 - **Web Interface**: User-friendly Gradio UI
 
@@ -19,7 +28,7 @@ A Python-based job market research tool with a Gradio UI for searching and analy
 
 - Python 3.13+
 - `uv` package manager
-- Anthropic API key (for scraping)
+- Anthropic API key (for Claude-powered scraping)
 
 ### Installation
 
@@ -75,6 +84,32 @@ SALARY_MINIMUM=50000
 SALARY_MAXIMUM=200000
 ```
 
+## Architecture
+
+The tool uses a **dual-backend design** to maximize coverage and reliability:
+
+- **ClaudeScraper** — delegates search to Anthropic's `web_search_20250305` tool. Claude interprets the query, searches the web, and extracts structured job data. High accuracy, API cost per search.
+- **JobSpyScraper** — uses the python-jobspy library to query Indeed, LinkedIn, and other boards directly. Fast and free, but relies on site structure stability.
+
+Both backends produce a common `JobListing` data model (Pydantic). Results pass through a **quality pipeline**:
+
+1. **Relevance filtering** — scores each listing against the original query and drops low-relevance noise
+2. **Deduplication** — identifies duplicate listings across sources using title/company/location similarity
+3. **Salary normalization** — standardizes salary formats (annual, monthly, hourly) to comparable ranges
+
+The `JobAnalyzer` then generates summary statistics and a formatted report for the UI.
+
+```
+Gradio UI → run_job_research()
+               ├── ClaudeScraper.search_jobs()   ─┐
+               └── JobSpyScraper.search_jobs()    ─┤
+                                                   ▼
+                                        Quality Pipeline
+                                        (filter → dedup → normalize)
+                                                   ▼
+                                            JobAnalyzer → Report
+```
+
 ## Project Structure
 
 ```
@@ -82,20 +117,23 @@ job-research/
 ├── src/
 │   ├── job_research/
 │   │   ├── __init__.py
-│   │   ├── config.py       # Configuration management
-│   │   ├── scraper.py      # Claude API web search scraper
-│   │   ├── analyzer.py     # Job analysis and reporting
-│   │   └── utils.py        # Caching, formatting, parsing
+│   │   ├── config.py           # Configuration management
+│   │   ├── scraper.py          # ClaudeScraper (Claude API web search)
+│   │   ├── jobspy_scraper.py   # JobSpyScraper (python-jobspy)
+│   │   ├── boards.py           # Job board definitions and site config
+│   │   ├── analyzer.py         # Job analysis and reporting
+│   │   └── utils.py            # Caching, formatting, parsing
 │   └── ui/
-│       └── app.py          # Gradio application + main()
+│       └── app.py              # Gradio application + main()
 ├── docs/
-│   ├── setup.md            # Detailed setup guide
-│   ├── project-structure.md
-│   └── scraper-design.md
-├── tests/                  # pytest test suite
+│   ├── setup.md                # Detailed setup guide
+│   ├── project-structure.md    # File-by-file breakdown
+│   ├── scraper-design.md       # Scraper architecture decisions
+│   └── changelog.md            # Version history
+├── tests/                      # pytest test suite
 ├── data/
-│   ├── results/            # Output reports
-│   └── cache/              # Cached search results
+│   ├── results/                # Output reports
+│   └── cache/                  # Cached search results
 ├── pyproject.toml
 └── .env.example
 ```
@@ -103,9 +141,11 @@ job-research/
 ## Dependencies
 
 - **anthropic** (0.49+) — Claude API with web search tool
+- **python-jobspy** (1.1+) — Direct job board scraping
+- **pydantic** (2.0+) — Data validation and job listing models
 - **gradio** (4.0+) — Web interface
-- **python-dotenv** (1.0+) — Environment configuration
 - **pandas** (2.0+) — Data analysis
+- **python-dotenv** (1.0+) — Environment configuration
 
 ## Development
 
@@ -124,6 +164,7 @@ uv run mypy src/
 - [Setup Guide](docs/setup.md)
 - [Project Structure](docs/project-structure.md)
 - [Scraper Design](docs/scraper-design.md)
+- [Changelog](docs/changelog.md)
 
 ## License
 
@@ -131,4 +172,4 @@ MIT License
 
 ---
 
-**Version:** 0.1.0
+**Version:** 0.3.0

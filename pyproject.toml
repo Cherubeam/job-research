@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "job-research"
 version = "0.3.0"
-description = "AI/ML Job market research tool with Gradio UI for German job boards"
+description = "AI-powered job market research tool for searching and analyzing job listings across German job boards"
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [
-    {name = "Marco Braun", email = "TODO@example.com"}
+    {name = "Marco Braun"}
 ]
 keywords = ["job-research", "gradio", "web-scraping", "job-market"]
 classifiers = [
