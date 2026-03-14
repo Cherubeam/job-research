@@ -156,6 +156,12 @@ def test_build_system_prompt_contains_anti_fabrication_rule(scraper):
     assert "copied verbatim from a web_search result" in prompt
 
 
+def test_build_system_prompt_contains_expired_listing_rule(scraper):
+    prompt = scraper._build_system_prompt()
+    assert "expired" in prompt
+    assert "abgelaufen" in prompt
+
+
 def test_default_boards_only_indeed(sample_job_search_params):
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")

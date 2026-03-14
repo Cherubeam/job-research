@@ -256,6 +256,7 @@ class ClaudeScraper:
             "- job_url MUST be copied verbatim from a web_search result — never construct or guess a URL.\n"
             "- Only include job listings whose URL points to an individual job page, not a search/category page.\n"
             "- Set salary fields to null unless the search result explicitly states a salary.\n"
+            "- Skip job listings whose page indicates the position is expired, removed, or no longer available (e.g. \"abgelaufen\", \"nicht mehr verfügbar\").\n"
             "- If you found fewer listings, return fewer. Do not pad results.\n"
             "- Never invent job listings. Only extract jobs explicitly mentioned in search results."
         )

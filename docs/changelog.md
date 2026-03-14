@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Prompt rule to skip expired/removed job listings (best-effort filter based on page content markers like "abgelaufen", "nicht mehr verfügbar").
+
 ### Changed
 - System prompt now includes `_max_jobs` count instruction so Claude aims for the configured number of listings (default 20) instead of defaulting to ~10.
 - Strengthened anti-fabrication prompt wording: "MUST be copied verbatim from a web_search result" replaces the weaker "Use the EXACT URL" instruction.
