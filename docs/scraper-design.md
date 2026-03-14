@@ -173,43 +173,56 @@ max_jobs_per_search: int = 20
 
 ---
 
-## 6. IndeedDirectScraper (JobSpy Backend)
+## 6. JobSpyScraper (Indeed + LinkedIn)
 
 ### 6.1 Why JobSpy?
 
 The `ClaudeScraper` uses Claude's `web_search_20250305` tool for both fetching and extracting job data. This works but has trade-offs: expensive per search, low yield (1-4 listings from dozens of URLs), and tightly coupled to the Anthropic SDK.
 
-**JobSpy** (python-jobspy) hits Indeed's **mobile app API** — not the Cloudflare-protected website — which is why it works without proxies, rate limiting, or browser automation. It returns structured DataFrame rows directly, making Claude's web search role redundant for the fetching step.
+**JobSpy** (python-jobspy) hits Indeed's **mobile app API** and LinkedIn — not the Cloudflare-protected websites — which is why it works without proxies, rate limiting, or browser automation. It returns structured DataFrame rows directly, making Claude's web search role redundant for the fetching step.
 
 ### 6.2 Architecture
 
 ```
-SCRAPER_BACKEND=indeed_direct
+SCRAPER_BACKEND=jobspy
 
 User Input (Gradio UI)
     ↓
-app.py: selects IndeedDirectScraper based on config
+app.py: selects JobSpyScraper based on config
     ↓
-indeed.py: IndeedDirectScraper.search_jobs()
+jobspy_scraper.py: JobSpyScraper.search_jobs()
     ├─ Check cache (utils.load_cache)
-    ├─ _scrape() → jobspy.scrape_jobs(site_name=["indeed"], ...)
-    ├─ _to_job_listing() — DataFrame row → JobListing
-    ├─ _deduplicate()
+    ├─ _scrape() → jobspy.scrape_jobs(site_name=["indeed", "linkedin"], ...)
+    │   ├─ Overfetch 2x results_wanted
+    │   ├─ _to_job_listing() — DataFrame row → JobListing (maps work_type, job_board)
+    │   └─ _is_relevant() — title token matching against keywords + alternatives
+    ├─ _deduplicate() — URL + title+company dedup
+    ├─ Truncate to max_jobs
     └─ Save cache (utils.save_cache)
     ↓
 analyzer.py: JobAnalyzer (same as Claude path)
 ```
 
-### 6.3 Configuration
+### 6.3 Result Quality Pipeline
+
+Raw JobSpy results contain irrelevant titles and duplicates. Three post-processing steps:
+
+1. **Title relevance filtering** (`_is_relevant()`): Tokenizes search keywords + `job_title_alternatives`, rejects listings whose title shares zero non-stopword tokens. Catches "Shopify Backend Developer" when searching "AI Engineer".
+
+2. **Title+company deduplication** (`_deduplicate()`): Groups by `(title.lower(), company.lower())` — same job posted in multiple locations (with different URLs) is kept only once. Also deduplicates by exact URL.
+
+3. **Overfetch + truncate**: Requests `max_jobs * 2` from JobSpy to compensate for filtering losses, then truncates to `max_jobs`.
+
+### 6.4 Configuration
 
 ```bash
-SCRAPER_BACKEND=indeed_direct   # or "claude" (default)
-MAX_JOBS_PER_SEARCH=20          # passed to results_wanted
+SCRAPER_BACKEND=jobspy           # or "claude" (default)
+MAX_JOBS_PER_SEARCH=20           # passed to results_wanted (internally 2x)
 ```
 
-No API key needed for the `indeed_direct` backend.
+No API key needed for the `jobspy` backend.
 
-### 6.4 JobScraper Protocol
+### 6.5 JobScraper Protocol
 
 Both scrapers implement the same `JobScraper` protocol:
 
@@ -221,9 +234,9 @@ class JobScraper(Protocol):
     ) -> list[JobListing]: ...
 ```
 
-### 6.5 Work Type Mapping
+### 6.6 Work Type Mapping
 
-JobSpy has limited filter support (only one of `is_remote`, `job_type` per search):
+**Search filters** (passed to JobSpy):
 
 | WorkType     | jobspy param          |
 |-------------|----------------------|
@@ -231,17 +244,29 @@ JobSpy has limited filter support (only one of `is_remote`, `job_type` per searc
 | Onsite only  | `is_remote=False`    |
 | Hybrid / Any | no filter (all results) |
 
-### 6.6 Trade-offs vs Claude Scraper
+**Result mapping** (from JobSpy columns to `JobListing.work_type`):
 
-| Aspect         | IndeedDirectScraper | ClaudeScraper |
+| JobSpy columns              | work_type display |
+|----------------------------|------------------|
+| `is_remote=True`           | "Remote"         |
+| `job_type="fulltime"`      | "Full-time"      |
+| `job_type="parttime"`      | "Part-time"      |
+| `job_type="contract"`      | "Contract"       |
+| `job_type="internship"`    | "Internship"     |
+| neither set                | "" (Unknown)     |
+
+### 6.7 Trade-offs vs Claude Scraper
+
+| Aspect         | JobSpyScraper       | ClaudeScraper |
 |---------------|--------------------:|-------------:|
 | Cost           | Free               | ~$0.002/search |
 | API key needed | No                 | Yes          |
 | Listing yield  | 10-20 per search   | 1-4 per search |
 | Data quality   | Structured (from API) | LLM-extracted |
-| Board coverage | Indeed only        | Configurable  |
+| Board coverage | Indeed + LinkedIn  | Configurable  |
 | Salary data    | When available     | Often missing  |
 | Descriptions   | Full text          | Not available  |
+| Work type      | From API columns   | LLM-guessed   |
 
 ---
 

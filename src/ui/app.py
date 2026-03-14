@@ -7,7 +7,7 @@ import gradio as gr
 
 from job_research.config import Config, OutputFormat, ScraperBackend, SeniorityLevel, WorkType
 from job_research.analyzer import JobAnalyzer
-from job_research.indeed import IndeedDirectScraper
+from job_research.jobspy_scraper import JobSpyScraper
 from job_research.scraper import ClaudeScraper, JobScraper
 from job_research.utils import generate_output_filename
 
@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 _config = Config.from_env()
 _scraper: JobScraper | None = None
 try:
-    if _config.scraper_backend == ScraperBackend.INDEED_DIRECT:
-        _scraper = IndeedDirectScraper(max_jobs=_config.max_jobs_per_search)
-        logger.info("Using IndeedDirectScraper (no API key needed)")
+    if _config.scraper_backend == ScraperBackend.JOBSPY:
+        _scraper = JobSpyScraper(max_jobs=_config.max_jobs_per_search)
+        logger.info("Using JobSpyScraper (no API key needed)")
     elif _config.claude_api_key:
         _scraper = ClaudeScraper(
             api_key=_config.claude_api_key,
@@ -55,7 +55,7 @@ def run_job_research(
                 "Error: Scraper not initialized",
                 "No scraper backend is configured.\n\n"
                 "To fix, set SCRAPER_BACKEND in your .env file:\n"
-                "- SCRAPER_BACKEND=indeed_direct  (no API key needed)\n"
+                "- SCRAPER_BACKEND=jobspy          (no API key needed)\n"
                 "- SCRAPER_BACKEND=claude          (requires CLAUDE_API_KEY)\n\n"
                 "For Claude backend, also set CLAUDE_API_KEY=your-key",
                 None,

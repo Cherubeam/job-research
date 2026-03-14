@@ -1,6 +1,7 @@
-"""Indeed scraper using python-jobspy (mobile API, no API key needed)."""
+"""Job scraper using python-jobspy (Indeed + LinkedIn, no API key needed)."""
 
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -14,9 +15,22 @@ from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
 
+_TITLE_STOPWORDS = frozenset({
+    "senior", "junior", "lead", "staff", "principal", "head",
+    "m/w/d", "f/m/d", "w/m/d", "gn", "d", "m", "f", "w",
+    "in", "und", "and", "the", "for", "of", "de", "der", "die", "das",
+})
 
-class IndeedDirectScraper:
-    """Scrapes Indeed via python-jobspy (mobile API, no API key needed)."""
+_JOB_TYPE_MAP = {
+    "fulltime": "Full-time",
+    "parttime": "Part-time",
+    "contract": "Contract",
+    "internship": "Internship",
+}
+
+
+class JobSpyScraper:
+    """Scrapes Indeed + LinkedIn via python-jobspy (no API key needed)."""
 
     def __init__(self, max_jobs: int = 20, country: str = "Germany") -> None:
         self._max_jobs = max_jobs
@@ -30,7 +44,7 @@ class IndeedDirectScraper:
     ) -> list[JobListing]:
         """Search for jobs matching *params*, using a local cache."""
         cache_key = create_cache_key(
-            "indeed_direct",
+            "jobspy",
             params.keywords,
             params.location,
             work_type=params.work_type.value,
@@ -50,9 +64,11 @@ class IndeedDirectScraper:
         if before_dedup != len(listings):
             logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
 
+        listings = listings[: self._max_jobs]
+
         if not listings:
             raise RuntimeError(
-                "Indeed search returned no job listings. "
+                "Job search returned no relevant listings. "
                 "Try broadening your search keywords or location."
             )
 
@@ -71,11 +87,11 @@ class IndeedDirectScraper:
         job_type, is_remote = self._map_work_type(params)
 
         kwargs: dict = {
-            "site_name": ["indeed"],
+            "site_name": ["indeed", "linkedin"],
             "search_term": params.keywords,
             "location": location,
             "country_indeed": self._country,
-            "results_wanted": self._max_jobs,
+            "results_wanted": self._max_jobs * 2,
         }
         if job_type is not None:
             kwargs["job_type"] = job_type
@@ -84,30 +100,49 @@ class IndeedDirectScraper:
 
         try:
             logger.info(
-                "Scraping Indeed: keywords=%r, location=%r, max=%d",
+                "Scraping Indeed+LinkedIn: keywords=%r, location=%r, max=%d",
                 params.keywords,
                 location,
-                self._max_jobs,
+                self._max_jobs * 2,
             )
             df = scrape_jobs(**kwargs)
         except Exception as exc:
             raise RuntimeError(
-                f"Indeed scraping failed: {exc}. "
+                f"JobSpy scraping failed: {exc}. "
                 "This may be a temporary issue — try again in a few minutes."
             ) from exc
 
         if df.empty:
-            logger.info("Indeed returned 0 results")
+            logger.info("JobSpy returned 0 results")
             return []
 
-        logger.info("Indeed returned %d raw results", len(df))
+        logger.info("JobSpy returned %d raw results", len(df))
+
+        keyword_tokens = self._build_keyword_tokens(
+            params.keywords, params.job_title_alternatives
+        )
+
         listings: list[JobListing] = []
+        skipped_irrelevant = 0
         for _, row in df.iterrows():
             listing = self._to_job_listing(row)
-            if listing is not None:
-                listings.append(listing)
+            if listing is None:
+                continue
+            if not self._is_relevant(listing.title, keyword_tokens):
+                skipped_irrelevant += 1
+                logger.debug("Skipped irrelevant: %s", listing.title)
+                continue
+            listings.append(listing)
 
-        logger.info("Converted %d/%d rows to JobListing", len(listings), len(df))
+        if skipped_irrelevant:
+            logger.info(
+                "Filtered %d irrelevant titles, kept %d/%d",
+                skipped_irrelevant,
+                len(listings),
+                len(df),
+            )
+        else:
+            logger.info("Converted %d/%d rows to JobListing", len(listings), len(df))
         return listings
 
     def _map_work_type(
@@ -120,6 +155,43 @@ class IndeedDirectScraper:
             return None, False
         # HYBRID and ANY — don't restrict
         return None, None
+
+    @staticmethod
+    def _build_keyword_tokens(
+        keywords: str, alternatives: list[str]
+    ) -> set[str]:
+        """Build a set of meaningful tokens from keywords and alternatives."""
+        all_text = [keywords] + alternatives
+        tokens: set[str] = set()
+        for phrase in all_text:
+            for word in re.split(r"[\s/,;()\-]+", phrase.lower()):
+                word = word.strip()
+                if word and word not in _TITLE_STOPWORDS:
+                    tokens.add(word)
+        return tokens
+
+    @staticmethod
+    def _is_relevant(title: str, keyword_tokens: set[str]) -> bool:
+        """Check if a job title shares at least one meaningful token with keywords."""
+        title_tokens = {
+            w.strip()
+            for w in re.split(r"[\s/,;()\-]+", title.lower())
+            if w.strip() and w.strip() not in _TITLE_STOPWORDS
+        }
+        return bool(title_tokens & keyword_tokens)
+
+    @staticmethod
+    def _map_work_type_from_row(row: pd.Series) -> str:
+        """Map jobspy's is_remote and job_type columns to a display string."""
+        is_remote = row.get("is_remote")
+        if is_remote is True or (isinstance(is_remote, str) and is_remote.lower() == "true"):
+            return "Remote"
+
+        job_type = row.get("job_type")
+        if job_type and isinstance(job_type, str) and not pd.isna(job_type):
+            return _JOB_TYPE_MAP.get(job_type.lower().replace("-", "").replace("_", ""), "")
+
+        return ""
 
     def _to_job_listing(self, row: pd.Series) -> Optional[JobListing]:
         """Convert a jobspy DataFrame row to a JobListing, or None on failure."""
@@ -140,6 +212,10 @@ class IndeedDirectScraper:
             except (ValueError, TypeError):
                 return None
 
+        # Map job_board from site column
+        site = _safe_str(row.get("site"))
+        job_board = site.capitalize() if site else ""
+
         try:
             return JobListing(
                 title=str(title),
@@ -150,7 +226,8 @@ class IndeedDirectScraper:
                 job_url=_safe_str(row.get("job_url")),
                 description=_safe_str(row.get("description")),
                 posted_date=_safe_str(row.get("date_posted")),
-                job_board="Indeed",
+                job_board=job_board,
+                work_type=self._map_work_type_from_row(row),
             )
         except ValidationError:
             logger.info("Skipped invalid row: %.100s", title)
@@ -158,19 +235,22 @@ class IndeedDirectScraper:
 
     @staticmethod
     def _deduplicate(listings: list[JobListing]) -> list[JobListing]:
-        """Remove duplicate listings by URL, then by title+company."""
+        """Remove duplicate listings by URL and by title+company."""
         seen_urls: set[str] = set()
         seen_keys: set[str] = set()
         result: list[JobListing] = []
         for listing in listings:
+            # Always check title+company
+            key = f"{listing.title.lower()}|{listing.company.lower()}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
+            # Also check URL if present
             if listing.job_url and listing.job_url.strip():
                 if listing.job_url in seen_urls:
                     continue
                 seen_urls.add(listing.job_url)
-            else:
-                key = f"{listing.title.lower()}|{listing.company.lower()}"
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
+
             result.append(listing)
         return result

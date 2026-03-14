@@ -25,6 +25,7 @@ def test_config_from_env(monkeypatch):
     monkeypatch.setenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
     monkeypatch.setenv("MAX_JOBS_PER_SEARCH", "30")
     monkeypatch.setenv("VERBOSE", "true")
+    monkeypatch.setenv("SCRAPER_BACKEND", "claude")
 
     config = Config.from_env()
 
@@ -46,6 +47,7 @@ def test_config_from_env_defaults_only_indeed(monkeypatch):
     # Clear any SEARCH_* vars that might be set
     for board in ["STEPSTONE", "INDEED", "LINKEDIN", "MONSTER", "HONEYPOT", "STARTUPS", "ARBEITSAGENTUR"]:
         monkeypatch.delenv(f"SEARCH_{board}", raising=False)
+    monkeypatch.delenv("SCRAPER_BACKEND", raising=False)
 
     config = Config.from_env()
 

@@ -35,7 +35,7 @@ class OutputFormat(str, Enum):
 class ScraperBackend(str, Enum):
     """Available scraper backends"""
     CLAUDE = "claude"
-    INDEED_DIRECT = "indeed_direct"
+    JOBSPY = "jobspy"
 
 
 @dataclass

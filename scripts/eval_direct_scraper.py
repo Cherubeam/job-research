@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate IndeedDirectScraper result quality and optionally compare with Claude scraper.
+"""Evaluate JobSpyScraper result quality and optionally compare with Claude scraper.
 
 Usage:
     uv run python scripts/eval_direct_scraper.py "AI Engineer" "Berlin"
@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from job_research.config import Config, JobSearchParams, WorkType
-from job_research.indeed import IndeedDirectScraper
+from job_research.jobspy_scraper import JobSpyScraper
 
 
 def _field_coverage(listings: list) -> dict[str, int]:
@@ -34,7 +34,7 @@ def _field_coverage(listings: list) -> dict[str, int]:
 def main() -> None:
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="Evaluate IndeedDirectScraper quality")
+    parser = argparse.ArgumentParser(description="Evaluate JobSpyScraper quality")
     parser.add_argument("keywords", help="Job search keywords")
     parser.add_argument("location", help="Job location")
     parser.add_argument("--work-type", default="Any", help="Work type filter")
@@ -48,12 +48,12 @@ def main() -> None:
         work_type=WorkType(args.work_type),
     )
 
-    # --- Indeed Direct ---
+    # --- JobSpy ---
     print("=" * 60)
-    print("IndeedDirectScraper")
+    print("JobSpyScraper")
     print("=" * 60)
 
-    scraper = IndeedDirectScraper(max_jobs=args.max_jobs)
+    scraper = JobSpyScraper(max_jobs=args.max_jobs)
     cache_dir = Path("data/cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,7 +122,7 @@ def main() -> None:
         print(f"\n{'=' * 60}")
         print("Side-by-side summary")
         print(f"{'=' * 60}")
-        print(f"  {'':15s}  Indeed   Claude")
+        print(f"  {'':15s}  JobSpy   Claude")
         print(f"  {'Listings':15s}  {total:<8d} {claude_total}")
         for field in coverage:
             i_count = coverage[field]
