@@ -16,8 +16,9 @@ class TestIndeedAdapter:
     def test_accepts_rc_clk_url(self, adapter):
         assert adapter.is_job_listing_url("https://de.indeed.com/rc/clk?jk=abc123")
 
-    def test_accepts_jobs_query_url(self, adapter):
-        assert adapter.is_job_listing_url("https://de.indeed.com/jobs?q=engineer&jk=abc")
+    def test_rejects_jobs_query_url(self, adapter):
+        """jobs?q=... URLs are search pages, not individual listings."""
+        assert not adapter.is_job_listing_url("https://de.indeed.com/jobs?q=engineer&jk=abc")
 
     def test_rejects_search_page(self, adapter):
         assert not adapter.is_job_listing_url(

@@ -19,10 +19,12 @@ class JobBoardAdapter:
 _ADAPTERS: dict[str, JobBoardAdapter] = {
     "de.indeed.com": JobBoardAdapter(
         domain="de.indeed.com",
-        job_url_pattern=re.compile(r"indeed\.\w+/(viewjob|rc/clk|jobs\?)"),
+        job_url_pattern=re.compile(r"indeed\.\w+/(viewjob|rc/clk)"),
         search_hint=(
-            "For Indeed: search pages list many jobs — follow up with searches "
-            "for specific job titles + company names to find individual viewjob URLs."
+            "For Indeed: initial searches often return search/category pages. "
+            "To find individual job listings, search for the company name + exact "
+            "job title + \"indeed\" (e.g. \"Siemens AI Engineer indeed\"). "
+            "Valid job URLs contain /viewjob or /rc/clk in the path."
         ),
     ),
     "stepstone.de": JobBoardAdapter(
