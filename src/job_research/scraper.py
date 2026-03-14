@@ -78,14 +78,29 @@ class ClaudeScraper:
 
         query = self._build_search_query(params)
         raw = self._claude_web_search(query)
-        listings = self._parse_results(raw, params)
-        listings = self._deduplicate_listings(listings)
+        logger.info("Web search returned %d chars", len(raw))
 
-        if listings:
-            save_cache(cache_dir, cache_key, [asdict(lst) for lst in listings], cache_duration_hours)
-            logger.info("Found %d listings (saved to cache)", len(listings))
-        else:
-            logger.warning("Search returned no listings — skipping cache")
+        listings, total_items = self._parse_results(raw, params)
+        logger.info("Parsed %d listings from %d extracted items", len(listings), total_items)
+
+        before_dedup = len(listings)
+        listings = self._deduplicate_listings(listings)
+        if before_dedup != len(listings):
+            logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
+
+        if not listings:
+            if total_items == 0:
+                raise RuntimeError(
+                    "The search completed but no job listings could be extracted. "
+                    "The job boards may not have returned relevant results for this query."
+                )
+            raise RuntimeError(
+                f"Found {total_items} items from the search but none had the required fields "
+                "(e.g. job title). The search results may not contain structured job listings."
+            )
+
+        save_cache(cache_dir, cache_key, [asdict(lst) for lst in listings], cache_duration_hours)
+        logger.info("Found %d listings (saved to cache)", len(listings))
         return listings
 
     # ----------------------------------------------------------------- private
@@ -149,7 +164,10 @@ class ClaudeScraper:
             )
         return raw_text
 
-    def _parse_results(self, raw_response: str, params: JobSearchParams) -> list[JobListing]:
+    def _parse_results(
+        self, raw_response: str, params: JobSearchParams
+    ) -> tuple[list[JobListing], int]:
+        """Parse raw response into listings. Returns (listings, total_extracted_items)."""
         prompt = (
             "Extract job listings from the following text and return ONLY a JSON array "
             "(no markdown fences, no prose). Each element must have these fields: "
@@ -177,13 +195,17 @@ class ClaudeScraper:
             )
 
         listings = []
+        skipped = 0
         for item in data:
             listing = self._listing_from_dict(item)
             if listing:
                 listings.append(listing)
             else:
-                logger.debug("Skipped item without title: %.100s", item)
-        return listings
+                skipped += 1
+                logger.info("Skipped item (missing title): %.100s", item)
+        if skipped:
+            logger.info("Skipped %d/%d items (missing required fields)", skipped, len(data))
+        return listings, len(data)
 
     def _listing_from_dict(self, data: dict) -> Optional[JobListing]:
         title = data.get("title") or ""

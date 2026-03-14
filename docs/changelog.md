@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Download button in Results tab to retrieve saved report files
 
 ### Fixed
+- `search_jobs` now raises `RuntimeError` with a diagnostic message when results are empty, distinguishing "no items extracted" from "all items filtered" — the UI shows the specific reason instead of a generic message
+- Added INFO-level pipeline logging (web search size, parsed count, dedup count, skipped items) for developer observability
+- Removed dead `if not listings` branch in `app.py` (now handled by exception)
 - Empty search results are no longer cached, so failed searches don't block retries for 24h
 - API and scraper errors now propagate to the UI instead of being silently swallowed
 - Configure `logging.basicConfig()` in `app.py` so logger output is actually visible

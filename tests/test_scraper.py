@@ -1,11 +1,23 @@
 """Tests for scraper.py"""
 
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch
 
 from job_research.analyzer import JobListing
 from job_research.config import JobBoardConfig
 from job_research.scraper import ClaudeScraper
+
+
+def _make_text_response(text: str) -> MagicMock:
+    """Build a mock API response containing a single text block."""
+    block = MagicMock()
+    block.type = "text"
+    block.text = text
+    response = MagicMock()
+    response.content = [block]
+    return response
 
 
 @pytest.fixture
@@ -87,6 +99,15 @@ def test_listing_from_dict_null_salary(scraper):
     assert listing.salary_max is None
 
 
+def test_listing_from_dict_string_salary(scraper):
+    data = {"title": "Engineer", "company": "Co", "location": "Berlin",
+            "salary_min": "€70.000", "salary_max": "90k"}
+    listing = scraper._listing_from_dict(data)
+    assert listing is not None
+    assert listing.salary_min == 70000
+    assert listing.salary_max == 90000
+
+
 # ---------------------------------------------------------- build_search_query
 
 def test_build_search_query_contains_keywords(scraper, sample_job_search_params):
@@ -139,18 +160,55 @@ def test_search_jobs_raises_on_exception(scraper, sample_job_search_params, tmp_
         scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
 
 
-# ---------------------------------------------------------- empty-result caching
+# ---------------------------------------------- empty-results raise RuntimeError
 
-def test_empty_results_are_not_cached(scraper, sample_job_search_params, tmp_cache_dir):
-    """When search returns no listings, save_cache must NOT be called."""
-    with patch("job_research.scraper.anthropic.Anthropic"):
-        with patch.object(scraper, "_claude_web_search", return_value="no jobs found"):
-            with patch.object(scraper, "_parse_results", return_value=[]):
-                with patch("job_research.scraper.save_cache") as mock_save:
-                    result = scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
+def test_search_jobs_raises_on_empty_extraction(scraper, sample_job_search_params, tmp_cache_dir):
+    """search_jobs raises RuntimeError when the API returns a valid empty JSON array."""
+    # First call: web search returns text; second call: parse returns '[]'
+    scraper._client.messages.create.side_effect = [
+        _make_text_response("No relevant jobs found for this query."),
+        _make_text_response("[]"),
+    ]
+    with patch("job_research.scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="no job listings could be extracted"):
+            scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
 
-    assert result == []
-    mock_save.assert_not_called()
+
+def test_search_jobs_raises_when_all_items_filtered(scraper, sample_job_search_params, tmp_cache_dir):
+    """search_jobs raises RuntimeError when all extracted items lack required fields."""
+    items = [{"company": "A", "location": "Berlin"}, {"company": "B"}]
+    scraper._client.messages.create.side_effect = [
+        _make_text_response("some web search text"),
+        _make_text_response(json.dumps(items)),
+    ]
+    with patch("job_research.scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="none had the required fields"):
+            scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
+
+
+# --------------------------------------------------------- search_jobs happy path
+
+def test_search_jobs_happy_path(scraper, sample_job_search_params, tmp_cache_dir):
+    """search_jobs returns JobListing objects when API returns valid job data."""
+    jobs = [
+        {"title": "AI Engineer", "company": "TechCo", "location": "Berlin",
+         "salary_min": 80000, "salary_max": 120000, "work_type": "Remote",
+         "job_board": "StepStone", "job_url": "https://example.com/1"},
+        {"title": "ML Engineer", "company": "DataInc", "location": "Munich",
+         "salary_min": None, "salary_max": None, "work_type": "Hybrid",
+         "job_board": "LinkedIn", "job_url": "https://example.com/2"},
+    ]
+    scraper._client.messages.create.side_effect = [
+        _make_text_response("web search results text"),
+        _make_text_response(json.dumps(jobs)),
+    ]
+    with patch("job_research.scraper.time.sleep"):
+        result = scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
+
+    assert len(result) == 2
+    assert all(isinstance(r, JobListing) for r in result)
+    assert result[0].title == "AI Engineer"
+    assert result[1].company == "DataInc"
 
 
 # ------------------------------------------------- error surfacing from scraper

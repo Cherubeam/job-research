@@ -70,15 +70,6 @@ def run_job_research(
             _config.output.cache_duration_hours,
         )
 
-        if not listings:
-            return (
-                "No results found",
-                "The search completed but returned no job listings.\n\n"
-                "This may happen if the search terms are too specific or the job boards "
-                "didn't return matching results. Try broadening your keywords or location.",
-                None,
-            )
-
         analyzer = JobAnalyzer()
         analyzer.add_listings(listings)
 
