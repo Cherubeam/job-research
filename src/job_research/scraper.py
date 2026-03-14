@@ -141,6 +141,24 @@ class ClaudeScraper:
                 time.sleep(wait)
         raise RuntimeError("unreachable")
 
+    def _extract_json(self, text: str) -> list | None:
+        """Try to parse a JSON array from text, return None on failure."""
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+        match = re.search(r"\[.*]", text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group())
+                if isinstance(data, list):
+                    return data
+            except json.JSONDecodeError:
+                pass
+        return None
+
     def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
         tools = [{
@@ -180,27 +198,28 @@ class ClaudeScraper:
         # Strip markdown fences if present
         text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()
 
-        # Try direct JSON parse, then fallback to extracting array from prose
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\[.*]", text, re.DOTALL)
-            if match:
-                try:
-                    data = json.loads(match.group())
-                except json.JSONDecodeError:
-                    raise RuntimeError(
-                        f"Failed to parse job listings from API response: {text[:200]}"
-                    )
-            else:
-                raise RuntimeError(
-                    f"Failed to parse job listings from API response: {text[:200]}"
-                )
-
-        if not isinstance(data, list):
-            raise RuntimeError(
-                f"Expected JSON array from API, got {type(data).__name__}"
+        data = self._extract_json(text)
+        if data is None:
+            # Model returned narrative instead of JSON — send follow-up turn
+            logger.warning("Response was not JSON, sending follow-up extraction request")
+            follow_up_messages = [
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": raw_text},
+                {"role": "user", "content": (
+                    "Now output ONLY the JSON array of job listings you found. "
+                    "No commentary, no markdown fences — just the raw JSON array."
+                )},
+            ]
+            retry_response = self._make_api_call(follow_up_messages, max_tokens=4096, system=system)
+            retry_text = "\n\n".join(
+                block.text for block in retry_response.content if block.type == "text"
             )
+            retry_text = re.sub(r"```(?:json)?\s*", "", retry_text).strip().rstrip("`").strip()
+            data = self._extract_json(retry_text)
+            if data is None:
+                raise RuntimeError(
+                    f"Failed to parse job listings after retry: {retry_text[:200]}"
+                )
 
         listings: list[JobListing] = []
         skipped = 0

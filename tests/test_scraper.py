@@ -207,16 +207,23 @@ class TestSearchAndExtract:
             with pytest.raises(RuntimeError, match="no text content"):
                 scraper._search_and_extract("test query")
 
-    def test_raises_on_invalid_json(self, scraper):
-        scraper._client.messages.create.return_value = _make_text_response("not json at all")
+    def test_raises_on_invalid_json_after_retry(self, scraper):
+        """Both initial response and follow-up retry return non-JSON text."""
+        scraper._client.messages.create.side_effect = [
+            _make_text_response("not json at all"),
+            _make_text_response("still not json"),
+        ]
         with patch("job_research.scraper.time.sleep"):
-            with pytest.raises(RuntimeError, match="Failed to parse job listings"):
+            with pytest.raises(RuntimeError, match="Failed to parse job listings after retry"):
                 scraper._search_and_extract("test query")
 
     def test_raises_on_non_array(self, scraper):
-        scraper._client.messages.create.return_value = _make_text_response('{"not": "array"}')
+        scraper._client.messages.create.side_effect = [
+            _make_text_response('{"not": "array"}'),
+            _make_text_response('{"still": "not array"}'),
+        ]
         with patch("job_research.scraper.time.sleep"):
-            with pytest.raises(RuntimeError, match="Expected JSON array"):
+            with pytest.raises(RuntimeError, match="Failed to parse job listings after retry"):
                 scraper._search_and_extract("test query")
 
     def test_strips_markdown_fences(self, scraper):
@@ -240,6 +247,29 @@ class TestSearchAndExtract:
         assert len(listings) == 1
         assert total == 3
         assert listings[0].title == "Valid Job"
+
+    def test_narrative_response_triggers_followup(self, scraper):
+        """When initial response is narrative, a follow-up call extracts JSON."""
+        jobs = [{"title": "AI Eng", "company": "Co", "location": "Berlin"}]
+        scraper._client.messages.create.side_effect = [
+            _make_text_response("I need to search for more specific job listings..."),
+            _make_text_response(json.dumps(jobs)),
+        ]
+        with patch("job_research.scraper.time.sleep"):
+            listings, total = scraper._search_and_extract("test query")
+        assert len(listings) == 1
+        assert listings[0].title == "AI Eng"
+        assert scraper._client.messages.create.call_count == 2
+
+    def test_narrative_followup_failure_raises(self, scraper):
+        """When both initial and follow-up responses are narrative, raises RuntimeError."""
+        scraper._client.messages.create.side_effect = [
+            _make_text_response("Let me search for those jobs..."),
+            _make_text_response("I couldn't find any structured results."),
+        ]
+        with patch("job_research.scraper.time.sleep"):
+            with pytest.raises(RuntimeError, match="Failed to parse job listings after retry"):
+                scraper._search_and_extract("test query")
 
     def test_extracts_json_from_prose(self, scraper):
         jobs = [{"title": "Data Eng", "company": "Co", "location": "Berlin"}]
