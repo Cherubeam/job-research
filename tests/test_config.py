@@ -39,6 +39,25 @@ def test_config_from_env(monkeypatch):
     assert config.verbose is True
 
 
+def test_config_from_env_defaults_only_indeed(monkeypatch):
+    """Without SEARCH_* env vars, only Indeed should be enabled."""
+    # Prevent .env file from injecting values
+    monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
+    # Clear any SEARCH_* vars that might be set
+    for board in ["STEPSTONE", "INDEED", "LINKEDIN", "MONSTER", "HONEYPOT", "STARTUPS", "ARBEITSAGENTUR"]:
+        monkeypatch.delenv(f"SEARCH_{board}", raising=False)
+
+    config = Config.from_env()
+
+    assert config.job_boards.search_indeed is True
+    assert config.job_boards.search_stepstone is False
+    assert config.job_boards.search_linkedin is False
+    assert config.job_boards.search_monster is False
+    assert config.job_boards.search_honeypot is False
+    assert config.job_boards.search_startups is False
+    assert config.job_boards.search_arbeitsagentur is False
+
+
 def test_config_from_json(tmp_path: Path):
     data = {
         "search_params": {

@@ -107,13 +107,13 @@ class Config:
         )
 
         job_boards = JobBoardConfig(
-            search_stepstone=os.getenv("SEARCH_STEPSTONE", "true").lower() == "true",
+            search_stepstone=os.getenv("SEARCH_STEPSTONE", "false").lower() == "true",
             search_indeed=os.getenv("SEARCH_INDEED", "true").lower() == "true",
-            search_linkedin=os.getenv("SEARCH_LINKEDIN", "true").lower() == "true",
-            search_monster=os.getenv("SEARCH_MONSTER", "true").lower() == "true",
-            search_honeypot=os.getenv("SEARCH_HONEYPOT", "true").lower() == "true",
-            search_startups=os.getenv("SEARCH_STARTUPS", "true").lower() == "true",
-            search_arbeitsagentur=os.getenv("SEARCH_ARBEITSAGENTUR", "true").lower() == "true",
+            search_linkedin=os.getenv("SEARCH_LINKEDIN", "false").lower() == "true",
+            search_monster=os.getenv("SEARCH_MONSTER", "false").lower() == "true",
+            search_honeypot=os.getenv("SEARCH_HONEYPOT", "false").lower() == "true",
+            search_startups=os.getenv("SEARCH_STARTUPS", "false").lower() == "true",
+            search_arbeitsagentur=os.getenv("SEARCH_ARBEITSAGENTUR", "false").lower() == "true",
         )
 
         output = OutputConfig(
