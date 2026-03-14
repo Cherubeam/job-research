@@ -11,13 +11,28 @@ from job_research.config import JobBoardConfig
 from job_research.scraper import ClaudeScraper
 
 
-def _make_text_response(text: str) -> MagicMock:
-    """Build a mock API response containing a single text block."""
-    block = MagicMock()
-    block.type = "text"
-    block.text = text
+def _make_text_response(text: str, search_urls: list[str] | None = None) -> MagicMock:
+    """Build a mock API response containing text and optional web_search_tool_result blocks."""
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = text
+    blocks = [text_block]
+
+    if search_urls:
+        search_results = []
+        for url in search_urls:
+            result = MagicMock()
+            result.type = "web_search_result"
+            result.url = url
+            result.title = "Mock result"
+            search_results.append(result)
+        search_block = MagicMock()
+        search_block.type = "web_search_tool_result"
+        search_block.content = search_results
+        blocks.insert(0, search_block)
+
     response = MagicMock()
-    response.content = [block]
+    response.content = blocks
     return response
 
 
@@ -131,20 +146,18 @@ def test_build_search_query_excludes_site_clause(scraper, sample_job_search_para
     assert "site:" not in query
 
 
-def test_active_boards_stored_on_scraper(sample_job_search_params):
+def test_default_boards_only_indeed(sample_job_search_params):
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")
-    assert "stepstone.de" in s._boards
-    assert "linkedin.com" in s._boards
-    assert "arbeitsagentur.de" in s._boards
+    assert s._boards == ["indeed.de"]
 
 
-def test_disabled_board_excluded_from_boards(sample_job_search_params):
-    board_config = JobBoardConfig(search_stepstone=False)
+def test_enabled_board_added_to_boards(sample_job_search_params):
+    board_config = JobBoardConfig(search_stepstone=True)
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config)
-    assert "stepstone.de" not in s._boards
-    assert "linkedin.com" in s._boards
+    assert "stepstone.de" in s._boards
+    assert "indeed.de" in s._boards
 
 
 # ---------------------------------------------------------- API call (mocked)
@@ -236,18 +249,39 @@ def test_search_jobs_raises_on_exception(scraper, sample_job_search_params, tmp_
 # -------------------------------------------------- _search_and_extract tests
 
 class TestSearchAndExtract:
-    def test_returns_listings(self, scraper):
+    def test_returns_listings_matching_search_urls(self, scraper):
         jobs = [
             {"title": "AI Engineer", "company": "TechCo", "location": "Berlin",
              "salary_min": 80000, "salary_max": 120000, "work_type": "Remote",
-             "job_board": "StepStone", "job_url": "https://example.com/1"},
+             "job_board": "Indeed", "job_url": "https://de.indeed.com/viewjob?jk=abc123"},
         ]
-        scraper._client.messages.create.return_value = _make_text_response(json.dumps(jobs))
+        scraper._client.messages.create.return_value = _make_text_response(
+            json.dumps(jobs),
+            search_urls=["https://de.indeed.com/viewjob?jk=abc123"],
+        )
         with patch("job_research.scraper.time.sleep"):
             listings, total = scraper._search_and_extract("test query")
         assert len(listings) == 1
         assert total == 1
         assert listings[0].title == "AI Engineer"
+
+    def test_filters_fabricated_urls(self, scraper):
+        """Listings with URLs not in search results are discarded."""
+        jobs = [
+            {"title": "Real Job", "company": "Co", "location": "Berlin",
+             "job_url": "https://de.indeed.com/viewjob?jk=real123"},
+            {"title": "Fake Job", "company": "Co", "location": "Berlin",
+             "job_url": "https://de.indeed.com/viewjob?jk=fabricated"},
+        ]
+        scraper._client.messages.create.return_value = _make_text_response(
+            json.dumps(jobs),
+            search_urls=["https://de.indeed.com/viewjob?jk=real123"],
+        )
+        with patch("job_research.scraper.time.sleep"):
+            listings, total = scraper._search_and_extract("test query")
+        assert len(listings) == 1
+        assert listings[0].title == "Real Job"
+        assert total == 2
 
     def test_raises_on_no_text(self, scraper):
         response = MagicMock()
@@ -285,9 +319,13 @@ class TestSearchAndExtract:
                 scraper._search_and_extract("test query")
 
     def test_strips_markdown_fences(self, scraper):
-        jobs = [{"title": "ML Eng", "company": "Co", "location": "Berlin"}]
+        jobs = [{"title": "ML Eng", "company": "Co", "location": "Berlin",
+                 "job_url": "https://de.indeed.com/viewjob?jk=fence1"}]
         fenced = f"```json\n{json.dumps(jobs)}\n```"
-        scraper._client.messages.create.return_value = _make_text_response(fenced)
+        scraper._client.messages.create.return_value = _make_text_response(
+            fenced,
+            search_urls=["https://de.indeed.com/viewjob?jk=fence1"],
+        )
         with patch("job_research.scraper.time.sleep"):
             listings, total = scraper._search_and_extract("test query")
         assert len(listings) == 1
@@ -295,11 +333,15 @@ class TestSearchAndExtract:
 
     def test_skips_invalid_items(self, scraper):
         items = [
-            {"title": "Valid Job", "company": "Co"},
+            {"title": "Valid Job", "company": "Co",
+             "job_url": "https://de.indeed.com/viewjob?jk=valid"},
             {"company": "No Title"},  # missing title → ValidationError
             {"title": "", "company": "Empty Title"},  # empty title → ValidationError
         ]
-        scraper._client.messages.create.return_value = _make_text_response(json.dumps(items))
+        scraper._client.messages.create.return_value = _make_text_response(
+            json.dumps(items),
+            search_urls=["https://de.indeed.com/viewjob?jk=valid"],
+        )
         with patch("job_research.scraper.time.sleep"):
             listings, total = scraper._search_and_extract("test query")
         assert len(listings) == 1
@@ -308,9 +350,13 @@ class TestSearchAndExtract:
 
     def test_narrative_response_triggers_followup(self, scraper):
         """When initial response is narrative, a follow-up call extracts JSON."""
-        jobs = [{"title": "AI Eng", "company": "Co", "location": "Berlin"}]
+        jobs = [{"title": "AI Eng", "company": "Co", "location": "Berlin",
+                 "job_url": "https://de.indeed.com/viewjob?jk=narr1"}]
         scraper._client.messages.create.side_effect = [
-            _make_text_response("I need to search for more specific job listings..."),
+            _make_text_response(
+                "I need to search for more specific job listings...",
+                search_urls=["https://de.indeed.com/viewjob?jk=narr1"],
+            ),
             _make_text_response(json.dumps(jobs)),
         ]
         with patch("job_research.scraper.time.sleep"):
@@ -330,13 +376,76 @@ class TestSearchAndExtract:
                 scraper._search_and_extract("test query")
 
     def test_extracts_json_from_prose(self, scraper):
-        jobs = [{"title": "Data Eng", "company": "Co", "location": "Berlin"}]
+        jobs = [{"title": "Data Eng", "company": "Co", "location": "Berlin",
+                 "job_url": "https://de.indeed.com/viewjob?jk=prose1"}]
         prose = f"Here are the results:\n{json.dumps(jobs)}\nEnd of results."
-        scraper._client.messages.create.return_value = _make_text_response(prose)
+        scraper._client.messages.create.return_value = _make_text_response(
+            prose,
+            search_urls=["https://de.indeed.com/viewjob?jk=prose1"],
+        )
         with patch("job_research.scraper.time.sleep"):
             listings, total = scraper._search_and_extract("test query")
         assert len(listings) == 1
         assert listings[0].title == "Data Eng"
+
+
+# ----------------------------------------- URL extraction and filtering tests
+
+class TestExtractSearchResultUrls:
+    def test_extracts_urls_from_web_search_results(self):
+        response = _make_text_response(
+            "[]",
+            search_urls=[
+                "https://de.indeed.com/viewjob?jk=abc",
+                "https://de.indeed.com/viewjob?jk=def",
+            ],
+        )
+        urls = ClaudeScraper._extract_search_result_urls(response)
+        assert urls == {
+            "https://de.indeed.com/viewjob?jk=abc",
+            "https://de.indeed.com/viewjob?jk=def",
+        }
+
+    def test_returns_empty_set_for_text_only_response(self):
+        response = _make_text_response("[]")
+        urls = ClaudeScraper._extract_search_result_urls(response)
+        assert urls == set()
+
+
+class TestFilterToSearchResults:
+    def test_keeps_matching_urls(self):
+        listings = [
+            JobListing(title="Job A", job_url="https://example.com/1"),
+            JobListing(title="Job B", job_url="https://example.com/2"),
+        ]
+        search_urls = {"https://example.com/1", "https://example.com/2"}
+        result = ClaudeScraper._filter_to_search_results(listings, search_urls)
+        assert len(result) == 2
+
+    def test_discards_fabricated_urls(self):
+        listings = [
+            JobListing(title="Real", job_url="https://example.com/1"),
+            JobListing(title="Fake", job_url="https://fake.com/nope"),
+        ]
+        search_urls = {"https://example.com/1"}
+        result = ClaudeScraper._filter_to_search_results(listings, search_urls)
+        assert len(result) == 1
+        assert result[0].title == "Real"
+
+    def test_normalizes_trailing_slash(self):
+        listings = [
+            JobListing(title="Job", job_url="https://example.com/1/"),
+        ]
+        search_urls = {"https://example.com/1"}
+        result = ClaudeScraper._filter_to_search_results(listings, search_urls)
+        assert len(result) == 1
+
+    def test_skips_filter_when_no_search_urls(self):
+        listings = [
+            JobListing(title="Job", job_url="https://example.com/1"),
+        ]
+        result = ClaudeScraper._filter_to_search_results(listings, set())
+        assert len(result) == 1
 
 
 # ---------------------------------------------- search_jobs integration tests
@@ -360,15 +469,18 @@ def test_search_jobs_raises_when_all_items_filtered(scraper, sample_job_search_p
 
 def test_search_jobs_happy_path(scraper, sample_job_search_params, tmp_cache_dir):
     """search_jobs returns JobListing objects when API returns valid job data."""
+    urls = ["https://de.indeed.com/viewjob?jk=abc", "https://de.indeed.com/viewjob?jk=def"]
     jobs = [
         {"title": "AI Engineer", "company": "TechCo", "location": "Berlin",
          "salary_min": 80000, "salary_max": 120000, "work_type": "Remote",
-         "job_board": "StepStone", "job_url": "https://example.com/1"},
+         "job_board": "Indeed", "job_url": urls[0]},
         {"title": "ML Engineer", "company": "DataInc", "location": "Munich",
          "salary_min": None, "salary_max": None, "work_type": "Hybrid",
-         "job_board": "LinkedIn", "job_url": "https://example.com/2"},
+         "job_board": "Indeed", "job_url": urls[1]},
     ]
-    scraper._client.messages.create.return_value = _make_text_response(json.dumps(jobs))
+    scraper._client.messages.create.return_value = _make_text_response(
+        json.dumps(jobs), search_urls=urls,
+    )
     with patch("job_research.scraper.time.sleep"):
         result = scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
 

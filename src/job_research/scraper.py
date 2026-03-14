@@ -184,7 +184,7 @@ class ClaudeScraper:
         """Normalize a URL for comparison: strip fragment, trailing slash."""
         parsed = urlparse(url)
         path = parsed.path.rstrip("/")
-        return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+        return urlunparse((parsed.scheme, parsed.netloc, path, parsed.params, parsed.query, ""))
 
     @staticmethod
     def _extract_search_result_urls(response: anthropic.types.Message) -> set[str]:
