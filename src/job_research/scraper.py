@@ -6,6 +6,7 @@ import re
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
 import anthropic
 from pydantic import ValidationError
@@ -178,6 +179,49 @@ class ClaudeScraper:
                 pass
         return None
 
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        """Normalize a URL for comparison: strip fragment, trailing slash."""
+        parsed = urlparse(url)
+        path = parsed.path.rstrip("/")
+        return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+    @staticmethod
+    def _extract_search_result_urls(response: anthropic.types.Message) -> set[str]:
+        """Extract ground-truth URLs from web_search_tool_result blocks."""
+        urls: set[str] = set()
+        for block in response.content:
+            if getattr(block, "type", None) != "web_search_tool_result":
+                continue
+            for result in getattr(block, "content", []):
+                if getattr(result, "type", None) == "web_search_result":
+                    url = getattr(result, "url", None)
+                    if url:
+                        urls.add(url)
+        return urls
+
+    @staticmethod
+    def _filter_to_search_results(
+        listings: list[JobListing], search_urls: set[str]
+    ) -> list[JobListing]:
+        """Keep only listings whose job_url appears in the search results."""
+        if not search_urls:
+            logger.warning("No search result URLs to cross-reference — skipping filter")
+            return listings
+        normalized_search = {ClaudeScraper._normalize_url(u) for u in search_urls}
+        kept = []
+        for listing in listings:
+            if listing.job_url and ClaudeScraper._normalize_url(listing.job_url) in normalized_search:
+                kept.append(listing)
+        discarded = len(listings) - len(kept)
+        logger.info(
+            "Kept %d/%d listings (discarded %d with fabricated URLs)",
+            len(kept), len(listings), discarded,
+        )
+        if discarded > 0 and not kept:
+            logger.warning("All listings had fabricated URLs — none matched search results")
+        return kept
+
     def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
         tools = [{
@@ -192,16 +236,24 @@ class ClaudeScraper:
         }]
         system = (
             "You are a job search assistant. Search German job boards using the "
-            "web_search tool, then return the results as a JSON array. "
-            "No markdown fences, no commentary — output only the JSON array. "
-            "Each element must have these fields: "
-            "title (string), company (string), location (string), "
-            "salary_min (integer or null), salary_max (integer or null), "
-            "work_type (string), job_board (string), job_url (string)."
+            "web_search tool. Then extract job listings ONLY from the search results "
+            "you received — never invent or fabricate listings.\n\n"
+            "Return a JSON array (no markdown fences, no commentary). Each element:\n"
+            "  title (string), company (string), location (string),\n"
+            "  salary_min (integer or null), salary_max (integer or null),\n"
+            "  work_type (string), job_board (string), job_url (string).\n\n"
+            "Rules:\n"
+            "- Use the EXACT URL from the search result for job_url.\n"
+            "- Set salary fields to null unless the search result explicitly states a salary.\n"
+            "- If you found fewer listings, return fewer. Do not pad results.\n"
+            "- Only include results that are individual job postings, not search result pages."
         )
-        user_message = f"Find approximately {self._max_jobs} job listings for {query}"
+        user_message = f"Search for {query} job listings and extract what you find"
         messages = [{"role": "user", "content": user_message}]
         response = self._make_api_call(messages, tools=tools, system=system)
+
+        search_urls = self._extract_search_result_urls(response)
+        logger.info("Found %d ground-truth URLs from web_search results", len(search_urls))
 
         raw_text = "\n\n".join(
             block.text for block in response.content if block.type == "text"
@@ -250,6 +302,8 @@ class ClaudeScraper:
                 logger.info("Skipped invalid item: %.100s", item)
         if skipped:
             logger.info("Skipped %d/%d items (validation failed)", skipped, len(data))
+
+        listings = self._filter_to_search_results(listings, search_urls)
 
         return listings, len(data)
 
