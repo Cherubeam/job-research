@@ -92,6 +92,8 @@ refactor: extract query builder to separate method
 
 Run `uv run ruff check src/ tests/` before committing to catch issues early.
 
+When implementing changes, commit each logical step as you go with a single-sentence commit message.
+
 ### Finishing a feature branch
 Before merging:
 1. Review and update any affected files in `docs/` and `README.md`
