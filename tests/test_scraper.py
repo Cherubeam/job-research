@@ -1,12 +1,10 @@
 """Tests for scraper.py"""
 
-import json
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from job_research.analyzer import JobListing
-from job_research.config import JobBoardConfig, JobSearchParams, WorkType
+from job_research.config import JobBoardConfig
 from job_research.scraper import ClaudeScraper
 
 
@@ -135,7 +133,21 @@ def test_make_api_call_retries_on_error(scraper):
     assert result is success_response
 
 
-def test_search_jobs_returns_empty_list_on_exception(scraper, sample_job_search_params, tmp_cache_dir):
-    scraper._client = MagicMock(side_effect=Exception("boom"))
-    result = scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
+def test_search_jobs_raises_on_exception(scraper, sample_job_search_params, tmp_cache_dir):
+    scraper._client.messages.create = MagicMock(side_effect=Exception("boom"))
+    with pytest.raises(Exception, match="boom"):
+        scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
+
+
+# ---------------------------------------------------------- empty-result caching
+
+def test_empty_results_are_not_cached(scraper, sample_job_search_params, tmp_cache_dir):
+    """When search returns no listings, save_cache must NOT be called."""
+    with patch("job_research.scraper.anthropic.Anthropic"):
+        with patch.object(scraper, "_claude_web_search", return_value="no jobs found"):
+            with patch.object(scraper, "_parse_results", return_value=[]):
+                with patch("job_research.scraper.save_cache") as mock_save:
+                    result = scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
+
     assert result == []
+    mock_save.assert_not_called()

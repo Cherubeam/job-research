@@ -1,10 +1,9 @@
 """Tests for config.py"""
 
 import json
-import pytest
 from pathlib import Path
 
-from job_research.config import Config, JobSearchParams, WorkType, SeniorityLevel, OutputFormat
+from job_research.config import Config, JobSearchParams, WorkType
 
 
 def test_config_default_construction():

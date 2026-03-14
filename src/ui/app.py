@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 
 import gradio as gr
 
@@ -10,6 +9,8 @@ from job_research.config import Config, SeniorityLevel, WorkType, OutputFormat
 from job_research.analyzer import JobAnalyzer
 from job_research.scraper import ClaudeScraper
 from job_research.utils import generate_output_filename
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 logger = logging.getLogger(__name__)
 

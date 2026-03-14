@@ -62,33 +62,31 @@ class ClaudeScraper:
         cache_duration_hours: int = 24,
     ) -> list[JobListing]:
         """Search for jobs matching *params*, using a local cache to avoid repeat API calls."""
-        try:
-            cache_key = create_cache_key(
-                "claude_web_search",
-                params.keywords,
-                params.location,
-                work_type=params.work_type.value,
-                seniority_level=params.seniority_level.value,
-                salary_min=params.salary_minimum,
-                salary_max=params.salary_maximum,
-            )
-            cached = load_cache(cache_dir, cache_key)
-            if cached is not None:
-                logger.info("Cache hit for key %s", cache_key)
-                return [JobListing(**item) for item in cached]
+        cache_key = create_cache_key(
+            "claude_web_search",
+            params.keywords,
+            params.location,
+            work_type=params.work_type.value,
+            seniority_level=params.seniority_level.value,
+            salary_min=params.salary_minimum,
+            salary_max=params.salary_maximum,
+        )
+        cached = load_cache(cache_dir, cache_key)
+        if cached is not None:
+            logger.info("Cache hit for key %s", cache_key)
+            return [JobListing(**item) for item in cached]
 
-            query = self._build_search_query(params)
-            raw = self._claude_web_search(query)
-            listings = self._parse_results(raw, params)
-            listings = self._deduplicate_listings(listings)
+        query = self._build_search_query(params)
+        raw = self._claude_web_search(query)
+        listings = self._parse_results(raw, params)
+        listings = self._deduplicate_listings(listings)
 
-            save_cache(cache_dir, cache_key, [asdict(l) for l in listings], cache_duration_hours)
+        if listings:
+            save_cache(cache_dir, cache_key, [asdict(lst) for lst in listings], cache_duration_hours)
             logger.info("Found %d listings (saved to cache)", len(listings))
-            return listings
-
-        except Exception:
-            logger.exception("search_jobs failed")
-            return []
+        else:
+            logger.warning("Search returned no listings — skipping cache")
+        return listings
 
     # ----------------------------------------------------------------- private
 

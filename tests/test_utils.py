@@ -1,9 +1,6 @@
 """Tests for utils.py"""
 
-import json
-import pytest
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import patch
 
 from job_research.utils import (
