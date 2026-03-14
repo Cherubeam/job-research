@@ -94,6 +94,13 @@ def main() -> None:
     text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()
     data = scraper._extract_json(text)
 
+    # Debug: show raw response preview
+    print("=== Raw response preview (first 2000 chars) ===")
+    print(raw_text[:2000])
+    if len(raw_text) > 2000:
+        print(f"  ... ({len(raw_text) - 2000} more chars)")
+    print()
+
     if data is None:
         print("WARNING: Response was not JSON, sending follow-up extraction request...")
         follow_up_messages = [
@@ -156,6 +163,18 @@ def main() -> None:
     print(f"  Valid (job URL + in search): {matched}/{total} ({match_rate:.0f}%)")
     print(f"  Search-page URLs:        {search_page}")
     print(f"  Fabricated:              {fabricated}")
+
+    # Show missed valid job URLs
+    valid_ground_truth = {
+        url for url in search_urls
+        if any(a.is_job_listing_url(url) for a in adapters)
+    }
+    claude_urls = {item.get("job_url", "") for item in data}
+    missed = valid_ground_truth - claude_urls
+    if missed:
+        print(f"\n=== Missed valid job URLs ({len(missed)}) ===")
+        for url in sorted(missed):
+            print(f"  {url}")
 
     # Field coverage
     has_salary = sum(1 for d in data if d.get("salary_min") is not None)

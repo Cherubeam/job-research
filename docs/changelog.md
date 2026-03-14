@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- System prompt now instructs Claude to extract ALL job listings, not just cherry-pick based on relevance.
+
+### Added
+- Eval script shows raw response preview and missed-URL report for debugging extraction yield.
+
 ### Fixed
 - Indeed adapter false positive: removed `jobs?` from URL pattern — `/jobs?q=...` URLs are search pages, not individual listings.
 - Eval script crash when Claude returns narrative text instead of JSON — now retries with a follow-up extraction request (same pattern as `scraper.py`).

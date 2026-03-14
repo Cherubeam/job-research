@@ -148,7 +148,7 @@ def test_build_search_query_excludes_site_clause(scraper, sample_job_search_para
 
 def test_build_system_prompt_contains_max_jobs(scraper):
     prompt = scraper._build_system_prompt()
-    assert "up to 10 listings" in prompt
+    assert "up to 10)" in prompt
 
 
 def test_build_system_prompt_contains_anti_fabrication_rule(scraper):
