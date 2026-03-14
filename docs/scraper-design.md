@@ -55,7 +55,7 @@ User sees results
 - Uses `tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10, "allowed_domains": [...], "user_location": {"type": "approximate", "country": "DE"}}]`
 - Site restrictions are handled via `allowed_domains` on the tool (not in the query string)
 - `user_location` is set to Germany for localized results
-- **System message** contains behavioral/formatting instructions (JSON output format)
+- **System message** contains behavioral/formatting instructions (JSON output format, `_max_jobs` count target, anti-fabrication rules)
 - **User message** is a simple search request — this separation prevents Claude from treating JSON instructions as the primary request and skipping tool invocation
 - Strips accidental markdown fences; falls back to regex `\[.*\]` extraction if direct `json.loads` fails
 - Each extracted item is validated via Pydantic `JobListing(**item)` — invalid items are skipped with a log message

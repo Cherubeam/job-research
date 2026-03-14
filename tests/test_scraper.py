@@ -146,6 +146,16 @@ def test_build_search_query_excludes_site_clause(scraper, sample_job_search_para
     assert "site:" not in query
 
 
+def test_build_system_prompt_contains_max_jobs(scraper):
+    prompt = scraper._build_system_prompt()
+    assert "up to 10 listings" in prompt
+
+
+def test_build_system_prompt_contains_anti_fabrication_rule(scraper):
+    prompt = scraper._build_system_prompt()
+    assert "copied verbatim from a web_search result" in prompt
+
+
 def test_default_boards_only_indeed(sample_job_search_params):
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")
