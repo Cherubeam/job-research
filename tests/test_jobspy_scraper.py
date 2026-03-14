@@ -70,9 +70,11 @@ class TestParameterMapping:
         mock_scrape.assert_called_once()
         call_kwargs = mock_scrape.call_args[1]
         assert call_kwargs["site_name"] == ["indeed", "linkedin"]
-        assert call_kwargs["search_term"] == "AI Engineer"
+        assert call_kwargs["search_term"] == '"AI Engineer"'
         assert call_kwargs["location"] == "Berlin"
         assert call_kwargs["country_indeed"] == "Germany"
+        assert call_kwargs["linkedin_fetch_description"] is True
+        assert call_kwargs["verbose"] == 2
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
     def test_site_name_includes_linkedin(

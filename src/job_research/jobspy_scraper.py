@@ -86,12 +86,16 @@ class JobSpyScraper:
         location = params.location if params.location != "All of Germany" else "Germany"
         job_type, is_remote = self._map_work_type(params)
 
+        search_term = f'"{params.keywords}"'
+
         kwargs: dict = {
             "site_name": ["indeed", "linkedin"],
-            "search_term": params.keywords,
+            "search_term": search_term,
             "location": location,
             "country_indeed": self._country,
             "results_wanted": self._max_jobs * 2,
+            "linkedin_fetch_description": True,
+            "verbose": 2,
         }
         if job_type is not None:
             kwargs["job_type"] = job_type
@@ -100,8 +104,8 @@ class JobSpyScraper:
 
         try:
             logger.info(
-                "Scraping Indeed+LinkedIn: keywords=%r, location=%r, max=%d",
-                params.keywords,
+                "Scraping Indeed+LinkedIn: search_term=%r, location=%r, max=%d",
+                search_term,
                 location,
                 self._max_jobs * 2,
             )
@@ -117,6 +121,9 @@ class JobSpyScraper:
             return []
 
         logger.info("JobSpy returned %d raw results", len(df))
+        if "site" in df.columns:
+            site_counts = df["site"].value_counts().to_dict()
+            logger.info("Results per site: %s", site_counts)
 
         keyword_tokens = self._build_keyword_tokens(
             params.keywords, params.job_title_alternatives
