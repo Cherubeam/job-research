@@ -4,11 +4,11 @@ import json
 import logging
 import re
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
 import anthropic
+from pydantic import ValidationError
 
 from job_research.analyzer import JobListing
 from job_research.config import JobBoardConfig, JobSearchParams
@@ -77,11 +77,8 @@ class ClaudeScraper:
             return [JobListing(**item) for item in cached]
 
         query = self._build_search_query(params)
-        raw = self._claude_web_search(query)
-        logger.info("Web search returned %d chars", len(raw))
-
-        listings, total_items = self._parse_results(raw, params)
-        logger.info("Parsed %d listings from %d extracted items", len(listings), total_items)
+        listings, total_items = self._search_and_extract(query)
+        logger.info("Extracted %d listings from %d items", len(listings), total_items)
 
         before_dedup = len(listings)
         listings = self._deduplicate_listings(listings)
@@ -99,7 +96,7 @@ class ClaudeScraper:
                 "(e.g. job title). The search results may not contain structured job listings."
             )
 
-        save_cache(cache_dir, cache_key, [asdict(lst) for lst in listings], cache_duration_hours)
+        save_cache(cache_dir, cache_key, [lst.model_dump() for lst in listings], cache_duration_hours)
         logger.info("Found %d listings (saved to cache)", len(listings))
         return listings
 
@@ -111,13 +108,7 @@ class ClaudeScraper:
             query_parts.append(params.work_type.value)
 
         site_clause = " OR ".join(f"site:{b}" for b in self._boards)
-        instruction = (
-            f"Find approximately {self._max_jobs} job listings from German job boards. "
-            "Return results as a JSON array where each element has the fields: "
-            "title, company, location, salary_min (integer or null), salary_max (integer or null), "
-            "work_type, job_board, job_url."
-        )
-        return f"{' '.join(query_parts)} ({site_clause}). {instruction}"
+        return f"{' '.join(query_parts)} ({site_clause})"
 
     def _rate_limit(self) -> None:
         elapsed = time.time() - self._last_call_time
@@ -150,10 +141,20 @@ class ClaudeScraper:
                 time.sleep(wait)
         raise RuntimeError("unreachable")
 
-    def _claude_web_search(self, query: str) -> str:
-        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
-        messages = [{"role": "user", "content": f"Search for jobs: {query}"}]
+    def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
+        """Single API call: web search + JSON extraction in one prompt."""
+        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]
+        prompt = (
+            f"Search for jobs: {query}\n\n"
+            f"Find approximately {self._max_jobs} job listings and return ONLY a JSON array. "
+            "No markdown fences, no prose — just the JSON array. "
+            "Each element must have these fields: "
+            "title, company, location, salary_min (integer or null), salary_max (integer or null), "
+            "work_type, job_board, job_url."
+        )
+        messages = [{"role": "user", "content": prompt}]
         response = self._make_api_call(messages, tools=tools)
+
         raw_text = "\n\n".join(
             block.text for block in response.content if block.type == "text"
         )
@@ -162,100 +163,45 @@ class ClaudeScraper:
                 "Claude API returned no text content. "
                 "The web search may have failed or returned only tool-use blocks."
             )
-        return raw_text
+        logger.info("API response: %d chars of text", len(raw_text))
 
-    def _parse_results(
-        self, raw_response: str, params: JobSearchParams
-    ) -> tuple[list[JobListing], int]:
-        """Parse raw response into listings. Returns (listings, total_extracted_items)."""
-        prompt = (
-            "Extract job listings from the following text and return ONLY a JSON array "
-            "(no markdown fences, no prose). Each element must have these fields: "
-            "title, company, location, salary_min (integer or null), salary_max (integer or null), "
-            "work_type, job_board, job_url.\n\n"
-            f"Text:\n{raw_response}"
-        )
-        messages = [{"role": "user", "content": prompt}]
-        response = self._make_api_call(messages)
-        text = "\n".join(block.text for block in response.content if block.type == "text")
+        # Strip markdown fences if present
+        text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()
 
-        # Strip accidental markdown fences
-        text = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
-
+        # Try direct JSON parse, then fallback to extracting array from prose
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            raise RuntimeError(
-                f"Failed to parse job listings from API response: {text[:200]}"
-            )
+            match = re.search(r"\[.*]", text, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group())
+                except json.JSONDecodeError:
+                    raise RuntimeError(
+                        f"Failed to parse job listings from API response: {text[:200]}"
+                    )
+            else:
+                raise RuntimeError(
+                    f"Failed to parse job listings from API response: {text[:200]}"
+                )
 
         if not isinstance(data, list):
             raise RuntimeError(
                 f"Expected JSON array from API, got {type(data).__name__}"
             )
 
-        listings = []
+        listings: list[JobListing] = []
         skipped = 0
         for item in data:
-            listing = self._listing_from_dict(item)
-            if listing:
-                listings.append(listing)
-            else:
+            try:
+                listings.append(JobListing(**item))
+            except ValidationError:
                 skipped += 1
-                logger.info("Skipped item (missing title): %.100s", item)
+                logger.info("Skipped invalid item: %.100s", item)
         if skipped:
-            logger.info("Skipped %d/%d items (missing required fields)", skipped, len(data))
+            logger.info("Skipped %d/%d items (validation failed)", skipped, len(data))
+
         return listings, len(data)
-
-    def _listing_from_dict(self, data: dict) -> Optional[JobListing]:
-        title = data.get("title") or ""
-        if not title:
-            return None
-
-        salary_raw = data.get("salary_min"), data.get("salary_max")
-        if isinstance(salary_raw[0], str) or isinstance(salary_raw[1], str):
-            sal_str = f"{salary_raw[0] or ''} {salary_raw[1] or ''}".strip()
-            salary_min, salary_max = self._normalize_salary(sal_str)
-        else:
-            salary_min = int(salary_raw[0]) if salary_raw[0] is not None else None
-            salary_max = int(salary_raw[1]) if salary_raw[1] is not None else None
-
-        return JobListing(
-            title=str(title),
-            company=str(data.get("company") or ""),
-            location=str(data.get("location") or ""),
-            salary_min=salary_min,
-            salary_max=salary_max,
-            work_type=str(data.get("work_type") or ""),
-            job_board=str(data.get("job_board") or ""),
-            job_url=str(data.get("job_url") or ""),
-        )
-
-    def _normalize_salary(self, salary_str: str) -> tuple[Optional[int], Optional[int]]:
-        if not salary_str or not salary_str.strip():
-            return None, None
-
-        # Replace k/K with 000
-        salary_str = re.sub(r"(\d+)\s*[kK]", lambda m: str(int(m.group(1)) * 1000), salary_str)
-
-        # Extract numeric tokens (handle European dot-separator and comma-separator)
-        # Remove currency symbols and non-numeric noise first
-        cleaned = re.sub(r"[€$£]", "", salary_str)
-        # European thousands: 80.000 → treat dots between digits as thousands sep
-        cleaned = re.sub(r"(\d)\.(\d{3})(?!\d)", r"\1\2", cleaned)
-        # US/EN thousands commas: 80,000
-        cleaned = cleaned.replace(",", "")
-
-        numbers = re.findall(r"\d+", cleaned)
-        if not numbers:
-            return None, None
-
-        try:
-            if len(numbers) >= 2:
-                return int(numbers[0]), int(numbers[1])
-            return int(numbers[0]), None
-        except ValueError:
-            return None, None
 
     def _deduplicate_listings(self, listings: list[JobListing]) -> list[JobListing]:
         seen_urls: set[str] = set()

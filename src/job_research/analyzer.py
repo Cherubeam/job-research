@@ -1,17 +1,18 @@
 """Job data analysis and reporting"""
 
-from dataclasses import dataclass
-from typing import Optional
+import re
 import statistics
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, field_validator, model_validator
 
 
-@dataclass
-class JobListing:
+class JobListing(BaseModel):
     """Represents a single job listing"""
     title: str
-    company: str
-    location: str
+    company: str = ""
+    location: str = ""
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     salary_currency: str = "EUR"
@@ -21,11 +22,67 @@ class JobListing:
     description: str = ""
     posted_date: Optional[str] = None
 
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("title must not be empty")
+        return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_salaries(cls, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return data
+        raw_min = data.get("salary_min")
+        raw_max = data.get("salary_max")
+        if isinstance(raw_min, str) or isinstance(raw_max, str):
+            combined = f"{raw_min or ''} {raw_max or ''}".strip()
+            data["salary_min"], data["salary_max"] = _parse_salary_range(combined)
+        else:
+            data["salary_min"] = _coerce_salary(raw_min)
+            data["salary_max"] = _coerce_salary(raw_max)
+        return data
+
     def salary_midpoint(self) -> Optional[float]:
         """Calculate salary midpoint"""
         if self.salary_min and self.salary_max:
             return (self.salary_min + self.salary_max) / 2
         return None
+
+
+def _coerce_salary(v: object) -> Optional[int]:
+    """Coerce a single salary value to int or None."""
+    if v is None:
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    return None
+
+
+def _parse_salary_range(salary_str: str) -> tuple[Optional[int], Optional[int]]:
+    """Parse a salary string into (min, max). Handles European formats, k-notation."""
+    if not salary_str or not salary_str.strip():
+        return None, None
+
+    salary_str = re.sub(r"(\d+)\s*[kK]", lambda m: str(int(m.group(1)) * 1000), salary_str)
+
+    cleaned = re.sub(r"[€$£]", "", salary_str)
+    cleaned = re.sub(r"(\d)\.(\d{3})(?!\d)", r"\1\2", cleaned)
+    cleaned = cleaned.replace(",", "")
+
+    numbers = re.findall(r"\d+", cleaned)
+    if not numbers:
+        return None, None
+
+    try:
+        if len(numbers) >= 2:
+            return int(numbers[0]), int(numbers[1])
+        return int(numbers[0]), None
+    except ValueError:
+        return None, None
 
 
 class JobAnalyzer:

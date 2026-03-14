@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File export: search results are saved to `data/results/` with timestamped filenames
 - Download button in Results tab to retrieve saved report files
 
+### Changed
+- Convert `JobListing` from dataclass to Pydantic `BaseModel` with runtime validation and salary coercion
+- Merge two-call scraper strategy into single API call — Claude now returns structured JSON while search results are still in context, fixing information loss between calls
+
 ### Fixed
 - `search_jobs` now raises `RuntimeError` with a diagnostic message when results are empty, distinguishing "no items extracted" from "all items filtered" — the UI shows the specific reason instead of a generic message
 - Added INFO-level pipeline logging (web search size, parsed count, dedup count, skipped items) for developer observability

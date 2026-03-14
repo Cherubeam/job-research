@@ -3,7 +3,7 @@
 **Status:** Implemented
 **Created:** November 21, 2025
 **Updated:** March 2026
-**Version:** 2.0
+**Version:** 3.0
 
 ---
 
@@ -34,9 +34,8 @@ app.py: run_job_research()
     ↓
 scraper.py: ClaudeScraper.search_jobs()
     ├─ Check cache (utils.load_cache)
-    ├─ _build_search_query() — format natural language query
-    ├─ _claude_web_search()  — API call #1: web_search tool
-    ├─ _parse_results()      — API call #2: JSON extraction
+    ├─ _build_search_query() — format search terms + site clause
+    ├─ _search_and_extract() — single API call: web search + JSON extraction
     ├─ _deduplicate_listings()
     └─ Save cache (utils.save_cache)
     ↓
@@ -47,18 +46,21 @@ analyzer.py: JobAnalyzer
 User sees results
 ```
 
-### 2.2 Two-Call Strategy
+### 2.2 Single-Call Strategy
 
-**Call #1: `_claude_web_search(query)`**
-- Uses `tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]`
-- Claude searches the web and returns text with job listings
-- Collects all `type == "text"` content blocks from the response
+**`_search_and_extract(query)`** — one API call with `web_search_20250305` tool:
+- Uses `tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]`
+- Prompt instructs Claude to search and return ONLY a JSON array
+- Claude has full search result context when producing structured output (no information loss)
+- Strips accidental markdown fences; falls back to regex `\[.*\]` extraction if direct `json.loads` fails
+- Each extracted item is validated via Pydantic `JobListing(**item)` — invalid items are skipped with a log message
 
-**Call #2: `_parse_results(raw_response, params)`**
-- No tools — plain text completion
-- Instructs Claude to extract a JSON array from the web search text
-- Strips accidental markdown fences with `re.sub` before `json.loads`
-- On `JSONDecodeError` → logs warning and returns `[]`
+### 2.3 Pydantic Validation
+
+`JobListing` is a Pydantic `BaseModel` (not a dataclass). This provides:
+- **Title validation:** empty/whitespace titles raise `ValidationError`, skipping the item
+- **Salary coercion:** string salaries (`"€70.000"`, `"90k"`) are parsed via a `model_validator`
+- **Type safety:** all fields get runtime type checking and defaults
 
 ---
 
@@ -71,16 +73,14 @@ Builds a natural language query with site operators:
 ```python
 query = f"{keywords} in {location} ({work_type})"
 site_clause = "site:stepstone.de OR site:indeed.de OR ..."
-instruction = f"Find approximately {max_jobs} job listings. Return JSON array."
+# JSON instruction is now in the _search_and_extract prompt, not the query
 ```
 
-**Example output:**
+**Example query:**
 ```
 AI Engineer in Berlin Remote (site:stepstone.de OR site:indeed.de OR site:linkedin.com
-OR site:xing.com OR site:monster.de OR site:jobborse.de OR site:honeypot.io
-OR site:startup.jobs OR site:gruenderszene.de).
-Find approximately 20 job listings. Return results as JSON array with fields:
-title, company, location, salary_min, salary_max, work_type, job_board, job_url.
+OR site:xing.com OR site:monster.de OR site:honeypot.io
+OR site:startup.jobs OR site:arbeitsagentur.de)
 ```
 
 ### 3.2 Caching Strategy
@@ -94,7 +94,7 @@ title, company, location, salary_min, salary_max, work_type, job_board, job_url.
 
 - Minimum 2 seconds between API calls (`_rate_limit()`)
 - 3 retries with exponential backoff (1s, 2s, 4s) on `anthropic.APIStatusError`
-- All exceptions caught in `search_jobs()` — returns `[]` instead of crashing the UI
+- `search_jobs()` raises `RuntimeError` on empty/invalid results — the UI displays the specific error
 
 ### 3.4 Deduplication
 
@@ -135,14 +135,14 @@ max_jobs_per_search: int = 20
 
 ## 5. Cost Estimation
 
-**Typical search (2 API calls):**
+**Typical search (1 API call):**
 - Input: ~600 tokens (query + web results context)
-- Output: ~1500 tokens (parsed JSON listings)
-- Cost: ~$0.001-0.003 per search at haiku-4-5 pricing
+- Output: ~1500 tokens (JSON listings)
+- Cost: ~$0.001-0.002 per search at haiku-4-5 pricing
 
 **Monthly estimate (1-2 users with caching):**
-- Conservative (50 searches/month): ~$1-2
-- Active (200 searches/month): ~$4-8
+- Conservative (50 searches/month): ~$0.50-1
+- Active (200 searches/month): ~$2-4
 
 **Caching reduces costs by 50-70%** for repeated searches.
 
@@ -151,7 +151,7 @@ max_jobs_per_search: int = 20
 ## 6. Future Enhancements
 
 - **Arbeitsagentur API**: Add parallel source alongside Claude search
-- **Better salary parsing**: Use Claude itself to normalize complex formats
+- **Better salary parsing**: Extend Pydantic validators for more complex formats
 - **Company research**: Pull company info from additional sources
 - **Job description analysis**: Claude summarization of key requirements
 - **Scheduled searches**: Cron-based job alerts
