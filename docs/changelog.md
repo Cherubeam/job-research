@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `IndeedDirectScraper` — new scraper backend using python-jobspy to hit Indeed's mobile API directly (no API key needed, no Cloudflare blocking).
+- `SCRAPER_BACKEND` env var to switch between `claude` (default) and `indeed_direct` backends.
+- `JobScraper` protocol in `scraper.py` so both scrapers share a common interface.
+- `scripts/eval_direct_scraper.py` — eval script for IndeedDirectScraper with optional Claude side-by-side comparison.
+- 20 new tests for IndeedDirectScraper (parameter mapping, DataFrame conversion, caching, dedup, error handling).
+
 ### Changed
 - System prompt now instructs Claude to extract ALL job listings, not just cherry-pick based on relevance.
 

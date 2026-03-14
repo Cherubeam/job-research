@@ -1,9 +1,9 @@
-# Claude-Assisted Web Search Scraper - Design Document
+# Scraper Architecture - Design Document
 
 **Status:** Implemented
 **Created:** November 21, 2025
 **Updated:** March 2026
-**Version:** 3.0
+**Version:** 4.0
 
 ---
 
@@ -173,10 +173,82 @@ max_jobs_per_search: int = 20
 
 ---
 
-## 6. Future Enhancements
+## 6. IndeedDirectScraper (JobSpy Backend)
 
-- **Arbeitsagentur API**: Add parallel source alongside Claude search
+### 6.1 Why JobSpy?
+
+The `ClaudeScraper` uses Claude's `web_search_20250305` tool for both fetching and extracting job data. This works but has trade-offs: expensive per search, low yield (1-4 listings from dozens of URLs), and tightly coupled to the Anthropic SDK.
+
+**JobSpy** (python-jobspy) hits Indeed's **mobile app API** — not the Cloudflare-protected website — which is why it works without proxies, rate limiting, or browser automation. It returns structured DataFrame rows directly, making Claude's web search role redundant for the fetching step.
+
+### 6.2 Architecture
+
+```
+SCRAPER_BACKEND=indeed_direct
+
+User Input (Gradio UI)
+    ↓
+app.py: selects IndeedDirectScraper based on config
+    ↓
+indeed.py: IndeedDirectScraper.search_jobs()
+    ├─ Check cache (utils.load_cache)
+    ├─ _scrape() → jobspy.scrape_jobs(site_name=["indeed"], ...)
+    ├─ _to_job_listing() — DataFrame row → JobListing
+    ├─ _deduplicate()
+    └─ Save cache (utils.save_cache)
+    ↓
+analyzer.py: JobAnalyzer (same as Claude path)
+```
+
+### 6.3 Configuration
+
+```bash
+SCRAPER_BACKEND=indeed_direct   # or "claude" (default)
+MAX_JOBS_PER_SEARCH=20          # passed to results_wanted
+```
+
+No API key needed for the `indeed_direct` backend.
+
+### 6.4 JobScraper Protocol
+
+Both scrapers implement the same `JobScraper` protocol:
+
+```python
+class JobScraper(Protocol):
+    def search_jobs(
+        self, params: JobSearchParams, cache_dir: Path,
+        cache_duration_hours: int = 24,
+    ) -> list[JobListing]: ...
+```
+
+### 6.5 Work Type Mapping
+
+JobSpy has limited filter support (only one of `is_remote`, `job_type` per search):
+
+| WorkType     | jobspy param          |
+|-------------|----------------------|
+| Remote only  | `is_remote=True`     |
+| Onsite only  | `is_remote=False`    |
+| Hybrid / Any | no filter (all results) |
+
+### 6.6 Trade-offs vs Claude Scraper
+
+| Aspect         | IndeedDirectScraper | ClaudeScraper |
+|---------------|--------------------:|-------------:|
+| Cost           | Free               | ~$0.002/search |
+| API key needed | No                 | Yes          |
+| Listing yield  | 10-20 per search   | 1-4 per search |
+| Data quality   | Structured (from API) | LLM-extracted |
+| Board coverage | Indeed only        | Configurable  |
+| Salary data    | When available     | Often missing  |
+| Descriptions   | Full text          | Not available  |
+
+---
+
+## 7. Future Enhancements
+
+- **OpenRouter migration**: Replace Anthropic SDK with OpenRouter for LLM analysis (report generation, semantic filtering)
+- **LLM analysis layer**: Use LLM for report summarization, career matching — features where deterministic scraping can't help
 - **Better salary parsing**: Extend Pydantic validators for more complex formats
 - **Company research**: Pull company info from additional sources
-- **Job description analysis**: Claude summarization of key requirements
 - **Scheduled searches**: Cron-based job alerts
