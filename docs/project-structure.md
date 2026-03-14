@@ -70,9 +70,9 @@ The project is organized into three main layers:
 
 **Key class:** `ClaudeScraper`
 - `search_jobs(params, cache_dir, cache_duration_hours)` → `list[JobListing]`
-- `_claude_web_search(query)` → raw text (API call #1 with web_search tool)
-- `_parse_results(raw, params)` → `list[JobListing]` (API call #2 for JSON extraction)
-- `_normalize_salary(salary_str)` → `(min, max)` tuple
+- `_search_and_extract(query)` → single API call (web_search + JSON extraction)
+- `_extract_search_result_urls(response)` → ground-truth URL set from `web_search_tool_result` blocks
+- `_filter_to_search_results(listings, urls)` → discard listings with fabricated URLs
 - `_deduplicate_listings(listings)` → deduped list
 
 ---
@@ -129,8 +129,9 @@ app.py: run_job_research()
 ClaudeScraper.search_jobs()
     ├─ Check cache (utils.load_cache)
     ├─ _build_search_query() → natural language query
-    ├─ _claude_web_search()  → API call #1 (web_search tool)
-    ├─ _parse_results()      → API call #2 (JSON extraction)
+    ├─ _search_and_extract() → single API call (web_search + JSON)
+    │   ├─ _extract_search_result_urls() → ground-truth URLs
+    │   └─ _filter_to_search_results()   → discard fabricated URLs
     ├─ _deduplicate_listings()
     └─ Save cache (utils.save_cache)
     ↓
@@ -175,5 +176,6 @@ User sees results
 | `src/job_research/utils.py` | Helper functions |
 | `pyproject.toml` | Dependencies |
 | `.env.example` | Configuration template |
+| `scripts/eval_search_quality.py` | Search quality eval (URL match rate) |
 | `README.md` | User documentation |
 | `docs/setup.md` | Quick setup guide |

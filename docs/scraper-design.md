@@ -34,8 +34,10 @@ app.py: run_job_research()
     ↓
 scraper.py: ClaudeScraper.search_jobs()
     ├─ Check cache (utils.load_cache)
-    ├─ _build_search_query() — format search terms + site clause
+    ├─ _build_search_query() — format search terms
     ├─ _search_and_extract() — single API call: web search + JSON extraction
+    │   ├─ _extract_search_result_urls() — ground-truth URLs
+    │   └─ _filter_to_search_results() — discard fabricated URLs
     ├─ _deduplicate_listings()
     └─ Save cache (utils.save_cache)
     ↓
@@ -57,7 +59,21 @@ User sees results
 - Strips accidental markdown fences; falls back to regex `\[.*\]` extraction if direct `json.loads` fails
 - Each extracted item is validated via Pydantic `JobListing(**item)` — invalid items are skipped with a log message
 
-### 2.3 Pydantic Validation
+### 2.3 URL Cross-Referencing
+
+The API response contains `web_search_tool_result` blocks with real URLs from the search. After extracting Claude's JSON output:
+
+1. `_extract_search_result_urls()` collects all URLs from `web_search_tool_result` blocks as ground truth
+2. `_filter_to_search_results()` discards any listing whose `job_url` doesn't match a ground-truth URL
+3. URL normalization strips fragments and trailing slashes while preserving query params
+
+This prevents Claude from fabricating plausible-looking URLs that don't correspond to real search results.
+
+### 2.4 Board Coverage
+
+**Default:** Indeed.de only (largest German job aggregator, no login required). Other boards (StepStone, LinkedIn, Monster, Honeypot, startup.jobs, Arbeitsagentur) can be re-enabled via UI toggles or env vars. Focusing on a single board reduces scope and improves result quality.
+
+### 2.5 Pydantic Validation
 
 `JobListing` is a Pydantic `BaseModel` (not a dataclass). This provides:
 - **Title validation:** empty/whitespace titles raise `ValidationError`, skipping the item
@@ -118,7 +134,7 @@ Handles multiple formats:
 ```bash
 CLAUDE_API_KEY=sk-ant-...     # Required
 CLAUDE_MODEL=claude-haiku-4-5-20251001  # Optional, defaults to opus-4-6
-MAX_JOBS_PER_SEARCH=20        # Optional, default 20
+MAX_JOBS_PER_SEARCH=20        # Optional, soft cap (actual count depends on search results)
 CACHE_DURATION_HOURS=24       # Optional
 ```
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Search results were entirely fabricated — Claude ignored web_search results and generated fake URLs/data. Now cross-references output against actual search result URLs and discards fabricated listings.
+
+### Changed
+- Default board config: only Indeed.de enabled (others can be re-enabled via UI). Reduces scope for higher-quality results.
+- Prompt no longer requests a specific result count — returns however many real listings are found.
+- Salary fields default to null unless explicitly stated in search results.
+
+### Added
+- `scripts/eval_search_quality.py` — standalone eval script measuring URL match rate and field coverage.
+
+### Fixed
 - Scraper now retries with a follow-up turn when the model returns narrative text instead of JSON, instead of immediately failing with `RuntimeError`
 - Fix follow-up retry hitting rate limits: disable SDK's internal retry (`max_retries=0`), handle 429s with `retry-after` header (default 60s backoff) instead of 1–4s exponential backoff
 

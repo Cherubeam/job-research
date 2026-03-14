@@ -5,7 +5,7 @@ A Python-based job market research tool with a Gradio UI for searching and analy
 ## Features
 
 - **Claude-Powered Search**: Delegates job searching to Anthropic's infrastructure via the `web_search_20250305` tool
-- **Multi-board Coverage**: StepStone, LinkedIn, Indeed, XING, Honeypot, and more
+- **Job Board Search**: Indeed.de by default (largest German aggregator); other boards opt-in via UI
 - **Flexible Filters**: Filter by location, salary range, seniority level, and work type
 - **Data Analysis**: Automatic salary analysis, job distribution, and market insights
 - **Multiple Export Formats**: Generate reports in Markdown or CSV
@@ -65,7 +65,7 @@ CLAUDE_API_KEY=sk-ant-...
 
 # Optional
 CLAUDE_MODEL=claude-haiku-4-5-20251001
-MAX_JOBS_PER_SEARCH=20
+MAX_JOBS_PER_SEARCH=20         # soft cap; actual count depends on search results
 JOB_KEYWORDS=AI Engineer
 LOCATION=All of Germany
 WORK_TYPE=Remote/Hybrid
