@@ -9,6 +9,7 @@ Requires CLAUDE_API_KEY in environment or .env file.
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from dotenv import load_dotenv
 # Add src to path so we can import job_research
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from job_research.boards import get_adapter
 from job_research.config import Config, JobSearchParams, WorkType
 from job_research.scraper import ClaudeScraper
 
@@ -61,32 +63,28 @@ def main() -> None:
         "allowed_domains": scraper._boards,
         "user_location": {"type": "approximate", "country": "DE"},
     }]
-    system = (
-        "You are a job search assistant. Search German job boards using the "
-        "web_search tool. Then extract job listings ONLY from the search results "
-        "you received — never invent or fabricate listings.\n\n"
-        "Return a JSON array (no markdown fences, no commentary). Each element:\n"
-        "  title (string), company (string), location (string),\n"
-        "  salary_min (integer or null), salary_max (integer or null),\n"
-        "  work_type (string), job_board (string), job_url (string).\n\n"
-        "Rules:\n"
-        "- Use the EXACT URL from the search result for job_url.\n"
-        "- Set salary fields to null unless the search result explicitly states a salary.\n"
-        "- If you found fewer listings, return fewer. Do not pad results.\n"
-        "- Only include results that are individual job postings, not search result pages."
-    )
+    system = scraper._build_system_prompt()
     user_message = f"Search for {query} job listings and extract what you find"
     messages = [{"role": "user", "content": user_message}]
-
-    import re
 
     response = scraper._make_api_call(messages, tools=tools, system=system)
 
     # Extract ground-truth URLs
     search_urls = scraper._extract_search_result_urls(response)
+    adapters = [get_adapter(d) for d in scraper._boards]
+
     print(f"=== Ground-truth URLs from web_search ({len(search_urls)}) ===")
+    job_urls = 0
+    search_page_urls = 0
     for url in sorted(search_urls):
-        print(f"  {url}")
+        is_job = any(a.is_job_listing_url(url) for a in adapters)
+        label = "JOB" if is_job else "SEARCH-PAGE"
+        if is_job:
+            job_urls += 1
+        else:
+            search_page_urls += 1
+        print(f"  [{label}] {url}")
+    print(f"  → {job_urls} individual job URLs, {search_page_urls} search/category page URLs")
     print()
 
     # Extract Claude's JSON output
@@ -102,19 +100,28 @@ def main() -> None:
         sys.exit(1)
 
     print(f"=== Claude's output ({len(data)} listings) ===")
-    matched = 0
-    unmatched = 0
     normalized_search = {scraper._normalize_url(u) for u in search_urls}
+
+    matched = 0
+    search_page = 0
+    fabricated = 0
 
     for item in data:
         url = item.get("job_url", "")
         norm = scraper._normalize_url(url) if url else ""
-        is_match = norm in normalized_search
-        status = "MATCH" if is_match else "FABRICATED"
-        if is_match:
+        in_search = norm in normalized_search
+        is_job = any(a.is_job_listing_url(url) for a in adapters) if url else False
+
+        if in_search and is_job:
+            status = "VALID"
             matched += 1
+        elif in_search:
+            status = "SEARCH-PAGE"
+            search_page += 1
         else:
-            unmatched += 1
+            status = "FABRICATED"
+            fabricated += 1
+
         title = item.get("title", "?")[:50]
         salary_min = item.get("salary_min")
         salary_max = item.get("salary_max")
@@ -124,12 +131,13 @@ def main() -> None:
 
     print()
     print("=== Summary ===")
-    total = matched + unmatched
+    total = matched + search_page + fabricated
     match_rate = (matched / total * 100) if total else 0
-    print(f"  Web search result URLs:  {len(search_urls)}")
+    print(f"  Web search result URLs:  {len(search_urls)} ({job_urls} job, {search_page_urls} search-page)")
     print(f"  Claude output listings:  {total}")
-    print(f"  URL match rate:          {matched}/{total} ({match_rate:.0f}%)")
-    print(f"  Fabricated:              {unmatched}")
+    print(f"  Valid (job URL + in search): {matched}/{total} ({match_rate:.0f}%)")
+    print(f"  Search-page URLs:        {search_page}")
+    print(f"  Fabricated:              {fabricated}")
 
     # Field coverage
     has_salary = sum(1 for d in data if d.get("salary_min") is not None)
