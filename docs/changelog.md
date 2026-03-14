@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Indeed adapter false positive: removed `jobs?` from URL pattern — `/jobs?q=...` URLs are search pages, not individual listings.
+- Eval script crash when Claude returns narrative text instead of JSON — now retries with a follow-up extraction request (same pattern as `scraper.py`).
+- System prompt search guidance now gives actionable follow-up strategy: search for `"[company] [title] site:[domain]"` when initial results are search/category pages.
+- Indeed `search_hint` updated with concrete example and valid URL path patterns.
+
 ### Added
 - Prompt rule to skip expired/removed job listings (best-effort filter based on page content markers like "abgelaufen", "nicht mehr verfügbar").
 

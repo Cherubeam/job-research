@@ -71,7 +71,7 @@ The API response contains `web_search_tool_result` blocks with real URLs from th
 3. URL normalization strips fragments and trailing slashes while preserving query params
 
 Platform adapters (`boards.py`) define per-board URL patterns:
-- **Indeed:** `/viewjob`, `/rc/clk`, `/jobs?` — rejects `/AI-Engineer-Jobs-in-Berlin`
+- **Indeed:** `/viewjob`, `/rc/clk` — rejects `/jobs?q=...` search pages and `/AI-Engineer-Jobs-in-Berlin`
 - **StepStone:** `/stellenangebote--`, `/jobs/<id>` — rejects search listing pages
 - **LinkedIn:** `/jobs/view/<id>` — rejects `/jobs/search/`
 - **Fallback:** unknown boards accept any URL on their domain
