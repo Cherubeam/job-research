@@ -58,13 +58,13 @@ class JobSearchParams:
 @dataclass
 class JobBoardConfig:
     """Configuration for job board searches"""
-    search_stepstone: bool = True
+    search_stepstone: bool = False
     search_indeed: bool = True
-    search_linkedin: bool = True
-    search_monster: bool = True
-    search_honeypot: bool = True
-    search_startups: bool = True
-    search_arbeitsagentur: bool = True
+    search_linkedin: bool = False
+    search_monster: bool = False
+    search_honeypot: bool = False
+    search_startups: bool = False
+    search_arbeitsagentur: bool = False
 
 
 @dataclass
