@@ -69,7 +69,7 @@ class TestParameterMapping:
 
         mock_scrape.assert_called_once()
         call_kwargs = mock_scrape.call_args[1]
-        assert call_kwargs["site_name"] == ["indeed", "linkedin"]
+        assert call_kwargs["site_name"] == ["linkedin", "indeed"]
         assert call_kwargs["search_term"] == '"AI Engineer"'
         assert call_kwargs["location"] == "Berlin"
         assert call_kwargs["country_indeed"] == "Germany"
@@ -85,7 +85,7 @@ class TestParameterMapping:
 
         scraper._scrape(params)
 
-        assert mock_scrape.call_args[1]["site_name"] == ["indeed", "linkedin"]
+        assert mock_scrape.call_args[1]["site_name"] == ["linkedin", "indeed"]
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
     def test_overfetch_requests_1_5x(

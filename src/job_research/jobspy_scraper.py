@@ -16,11 +16,34 @@ from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
 
-_TITLE_STOPWORDS = frozenset({
-    "senior", "junior", "lead", "staff", "principal", "head",
-    "m/w/d", "f/m/d", "w/m/d", "gn", "d", "m", "f", "w",
-    "in", "und", "and", "the", "for", "of", "de", "der", "die", "das",
-})
+_TITLE_STOPWORDS = frozenset(
+    {
+        "senior",
+        "junior",
+        "lead",
+        "staff",
+        "principal",
+        "head",
+        "m/w/d",
+        "f/m/d",
+        "w/m/d",
+        "gn",
+        "d",
+        "m",
+        "f",
+        "w",
+        "in",
+        "und",
+        "and",
+        "the",
+        "for",
+        "of",
+        "de",
+        "der",
+        "die",
+        "das",
+    }
+)
 
 _JOB_TYPE_MAP = {
     "fulltime": "Full-time",
@@ -106,7 +129,7 @@ class JobSpyScraper:
         search_term = f'"{params.keywords}"'
 
         kwargs: dict = {
-            "site_name": ["indeed", "linkedin"],
+            "site_name": ["linkedin", "indeed"],
             "search_term": search_term,
             "location": location,
             "country_indeed": self._country,
@@ -121,7 +144,7 @@ class JobSpyScraper:
 
         try:
             logger.info(
-                "Scraping Indeed+LinkedIn: search_term=%r, location=%r, max=%d",
+                "Scraping LinkedIn + Indeed: search_term=%r, location=%r, max=%d",
                 search_term,
                 location,
                 int(self._max_jobs * 1.5),
@@ -142,9 +165,12 @@ class JobSpyScraper:
             site_counts = df["site"].value_counts().to_dict()
             logger.info("Results per site: %s", site_counts)
 
-        keyword_tokens = self._build_keyword_tokens(
-            params.keywords, params.job_title_alternatives
-        )
+        # Restore requested site order (jobspy sorts alphabetically)
+        site_order = kwargs["site_name"]
+        df["site"] = pd.Categorical(df["site"], categories=site_order, ordered=True)
+        df = df.sort_values("site").reset_index(drop=True)
+
+        keyword_tokens = self._build_keyword_tokens(params.keywords, params.job_title_alternatives)
 
         listings: list[JobListing] = []
         skipped_irrelevant = 0
@@ -169,9 +195,7 @@ class JobSpyScraper:
             logger.info("Converted %d/%d rows to JobListing", len(listings), len(df))
         return listings
 
-    def _map_work_type(
-        self, params: JobSearchParams
-    ) -> tuple[Optional[str], Optional[bool]]:
+    def _map_work_type(self, params: JobSearchParams) -> tuple[Optional[str], Optional[bool]]:
         """Map WorkType enum to jobspy's job_type and is_remote parameters."""
         if params.work_type == WorkType.REMOTE:
             return None, True
@@ -181,9 +205,7 @@ class JobSpyScraper:
         return None, None
 
     @staticmethod
-    def _build_keyword_tokens(
-        keywords: str, alternatives: list[str]
-    ) -> set[str]:
+    def _build_keyword_tokens(keywords: str, alternatives: list[str]) -> set[str]:
         """Build a set of meaningful tokens from keywords and alternatives."""
         all_text = [keywords] + alternatives
         tokens: set[str] = set()
