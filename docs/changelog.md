@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Empty search results are no longer cached, so failed searches don't block retries for 24h
 - API and scraper errors now propagate to the UI instead of being silently swallowed
 - Configure `logging.basicConfig()` in `app.py` so logger output is actually visible
+- `_claude_web_search` now raises on empty text responses instead of silently returning `""`
+- `_parse_results` raises on invalid JSON and non-array responses instead of returning `[]`
+- `_listing_from_dict` logs skipped items (missing title) at debug level
+- `app.py` reuses the module-level `_config` instead of creating a second `Config()` with different defaults
+- Empty-result UI message now provides actionable troubleshooting hints
 
 ### Changed
 - Switch default model from `claude-opus-4-6` to `claude-haiku-4-5-20251001` (~60x cheaper, sufficient for web search + JSON extraction)

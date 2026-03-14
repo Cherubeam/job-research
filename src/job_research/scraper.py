@@ -139,14 +139,17 @@ class ClaudeScraper:
         tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
         messages = [{"role": "user", "content": f"Search for jobs: {query}"}]
         response = self._make_api_call(messages, tools=tools)
-        return "\n\n".join(
+        raw_text = "\n\n".join(
             block.text for block in response.content if block.type == "text"
         )
+        if not raw_text.strip():
+            raise RuntimeError(
+                "Claude API returned no text content. "
+                "The web search may have failed or returned only tool-use blocks."
+            )
+        return raw_text
 
     def _parse_results(self, raw_response: str, params: JobSearchParams) -> list[JobListing]:
-        if not raw_response.strip():
-            return []
-
         prompt = (
             "Extract job listings from the following text and return ONLY a JSON array "
             "(no markdown fences, no prose). Each element must have these fields: "
@@ -164,18 +167,22 @@ class ClaudeScraper:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning("Failed to parse JSON from Claude response; raw: %.200s", text)
-            return []
+            raise RuntimeError(
+                f"Failed to parse job listings from API response: {text[:200]}"
+            )
 
         if not isinstance(data, list):
-            logger.warning("Expected JSON array, got %s", type(data).__name__)
-            return []
+            raise RuntimeError(
+                f"Expected JSON array from API, got {type(data).__name__}"
+            )
 
         listings = []
         for item in data:
             listing = self._listing_from_dict(item)
             if listing:
                 listings.append(listing)
+            else:
+                logger.debug("Skipped item without title: %.100s", item)
         return listings
 
     def _listing_from_dict(self, data: dict) -> Optional[JobListing]:

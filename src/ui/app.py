@@ -5,7 +5,7 @@ import os
 
 import gradio as gr
 
-from job_research.config import Config, SeniorityLevel, WorkType, OutputFormat
+from job_research.config import Config, OutputFormat, SeniorityLevel, WorkType
 from job_research.analyzer import JobAnalyzer
 from job_research.scraper import ClaudeScraper
 from job_research.utils import generate_output_filename
@@ -56,26 +56,26 @@ def run_job_research(
                 None,
             )
 
-        config = Config()
-        config.search_params.keywords = keywords
-        config.search_params.location = location
-        config.search_params.work_type = WorkType(work_type)
-        config.search_params.seniority_level = SeniorityLevel(seniority)
-        config.search_params.salary_minimum = salary_min
-        config.search_params.salary_maximum = salary_max
-        config.output.output_format = OutputFormat(output_format)
+        _config.search_params.keywords = keywords
+        _config.search_params.location = location
+        _config.search_params.work_type = WorkType(work_type)
+        _config.search_params.seniority_level = SeniorityLevel(seniority)
+        _config.search_params.salary_minimum = salary_min
+        _config.search_params.salary_maximum = salary_max
+        _config.output.output_format = OutputFormat(output_format)
 
         listings = _scraper.search_jobs(
-            config.search_params,
-            config.output.cache_directory,
-            config.output.cache_duration_hours,
+            _config.search_params,
+            _config.output.cache_directory,
+            _config.output.cache_duration_hours,
         )
 
         if not listings:
             return (
                 "No results found",
-                "No job listings found for the given search parameters.\n\n"
-                "Try broadening your search (e.g., different keywords or location).",
+                "The search completed but returned no job listings.\n\n"
+                "This may happen if the search terms are too specific or the job boards "
+                "didn't return matching results. Try broadening your keywords or location.",
                 None,
             )
 

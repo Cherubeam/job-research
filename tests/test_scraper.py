@@ -151,3 +151,61 @@ def test_empty_results_are_not_cached(scraper, sample_job_search_params, tmp_cac
 
     assert result == []
     mock_save.assert_not_called()
+
+
+# ------------------------------------------------- error surfacing from scraper
+
+def test_claude_web_search_raises_on_no_text_blocks(scraper):
+    """_claude_web_search must raise RuntimeError when response has no text blocks."""
+    mock_response = MagicMock()
+    # Simulate response with only tool-use blocks (no text blocks)
+    tool_block = MagicMock()
+    tool_block.type = "tool_use"
+    mock_response.content = [tool_block]
+    scraper._client.messages.create.return_value = mock_response
+
+    with patch("job_research.scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="no text content"):
+            scraper._claude_web_search("test query")
+
+
+def test_claude_web_search_raises_on_empty_text(scraper):
+    """_claude_web_search must raise RuntimeError when text blocks are empty."""
+    mock_response = MagicMock()
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = "   "
+    mock_response.content = [text_block]
+    scraper._client.messages.create.return_value = mock_response
+
+    with patch("job_research.scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="no text content"):
+            scraper._claude_web_search("test query")
+
+
+def test_parse_results_raises_on_invalid_json(scraper, sample_job_search_params):
+    """_parse_results must raise RuntimeError on unparseable JSON."""
+    mock_response = MagicMock()
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = "this is not json at all"
+    mock_response.content = [text_block]
+    scraper._client.messages.create.return_value = mock_response
+
+    with patch("job_research.scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="Failed to parse job listings"):
+            scraper._parse_results("some raw response", sample_job_search_params)
+
+
+def test_parse_results_raises_on_non_array_json(scraper, sample_job_search_params):
+    """_parse_results must raise RuntimeError when JSON is not an array."""
+    mock_response = MagicMock()
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = '{"not": "an array"}'
+    mock_response.content = [text_block]
+    scraper._client.messages.create.return_value = mock_response
+
+    with patch("job_research.scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="Expected JSON array"):
+            scraper._parse_results("some raw response", sample_job_search_params)
