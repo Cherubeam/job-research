@@ -40,7 +40,7 @@ The project is organized into three main layers:
 - `run_job_research()` - Function that executes when user clicks "Search"
 - `create_ui()` - Builds the entire web interface
 - `main()` - Entry point for the `job-research` CLI command
-- Three tabs: Search, Results, Info
+- Two tabs: Search (with inline results and live log), Info
 
 ---
 
@@ -170,6 +170,7 @@ User sees results
 | File | Purpose |
 |------|---------|
 | `src/ui/app.py` | Web interface |
+| `src/ui/log_capture.py` | Thread-safe log capture for UI |
 | `src/job_research/config.py` | Configuration & data structures |
 | `src/job_research/scraper.py` | Claude API web search scraper |
 | `src/job_research/analyzer.py` | Analysis & reporting |

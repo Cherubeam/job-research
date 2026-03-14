@@ -2,6 +2,9 @@
 
 import logging
 import os
+import threading
+import time
+from collections.abc import Generator
 
 import gradio as gr
 
@@ -10,6 +13,7 @@ from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
 from job_research.scraper import ClaudeScraper, JobScraper
 from job_research.utils import generate_output_filename
+from ui.log_capture import LogCaptureHandler
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -42,44 +46,89 @@ def run_job_research(
     salary_max: int,
     output_format: str,
     interleave_sites: bool = True,
-) -> tuple[str, str, str | None]:
-    """Run job research with given parameters. Returns (status, report, filepath)."""
+) -> Generator[tuple[str, str, str, str | None], None, None]:
+    """Run job research with given parameters. Yields (status_md, log_text, report_md, filepath)."""
+    if not keywords.strip():
+        yield ("**Error:** Keywords cannot be empty", "", "", None)
+        return
+
+    if salary_min > salary_max:
+        yield ("**Error:** Minimum salary cannot be greater than maximum", "", "", None)
+        return
+
+    if _scraper is None:
+        yield (
+            "**Error:** Scraper not initialized",
+            "",
+            "No scraper backend is configured.\n\n"
+            "To fix, set `SCRAPER_BACKEND` in your `.env` file:\n"
+            "- `SCRAPER_BACKEND=jobspy` (no API key needed)\n"
+            "- `SCRAPER_BACKEND=claude` (requires `CLAUDE_API_KEY`)\n\n"
+            "For Claude backend, also set `CLAUDE_API_KEY=your-key`",
+            None,
+        )
+        return
+
+    # Set up log capture
+    handler = LogCaptureHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    root_logger = logging.getLogger("job_research")
+    root_logger.addHandler(handler)
+
+    # Prepare config
+    _config.search_params.keywords = keywords
+    _config.search_params.location = location
+    _config.search_params.work_type = WorkType(work_type)
+    _config.search_params.seniority_level = SeniorityLevel(seniority)
+    _config.search_params.salary_minimum = salary_min
+    _config.search_params.salary_maximum = salary_max
+    _config.output.output_format = OutputFormat(output_format)
+
+    search_kwargs: dict = {
+        "params": _config.search_params,
+        "cache_dir": _config.output.cache_directory,
+        "cache_duration_hours": _config.output.cache_duration_hours,
+    }
+    if hasattr(_scraper, "_interleave_by_site"):
+        search_kwargs["interleave"] = interleave_sites
+
+    # Run search in background thread
+    result_holder: dict = {}
+
+    def _search() -> None:
+        try:
+            listings = _scraper.search_jobs(**search_kwargs)
+            result_holder["listings"] = listings
+        except Exception as exc:
+            result_holder["error"] = exc
+
+    thread = threading.Thread(target=_search, daemon=True)
+    thread.start()
+
     try:
-        if not keywords.strip():
-            return ("Error", "Keywords cannot be empty", None)
-
-        if salary_min > salary_max:
-            return ("Error", "Minimum salary cannot be greater than maximum", None)
-
-        if _scraper is None:
-            return (
-                "Error: Scraper not initialized",
-                "No scraper backend is configured.\n\n"
-                "To fix, set SCRAPER_BACKEND in your .env file:\n"
-                "- SCRAPER_BACKEND=jobspy          (no API key needed)\n"
-                "- SCRAPER_BACKEND=claude          (requires CLAUDE_API_KEY)\n\n"
-                "For Claude backend, also set CLAUDE_API_KEY=your-key",
+        # Poll and yield updates while search is running
+        while thread.is_alive():
+            latest = handler.get_latest()
+            status_detail = f" — {latest}" if latest else ""
+            yield (
+                f"**Searching...**{status_detail}",
+                handler.get_all(),
+                "",
                 None,
             )
+            time.sleep(0.5)
 
-        _config.search_params.keywords = keywords
-        _config.search_params.location = location
-        _config.search_params.work_type = WorkType(work_type)
-        _config.search_params.seniority_level = SeniorityLevel(seniority)
-        _config.search_params.salary_minimum = salary_min
-        _config.search_params.salary_maximum = salary_max
-        _config.output.output_format = OutputFormat(output_format)
+        # Thread finished — check result
+        if "error" in result_holder:
+            yield (
+                f"**Error:** {result_holder['error']}",
+                handler.get_all(),
+                "",
+                None,
+            )
+            return
 
-        search_kwargs: dict = {
-            "params": _config.search_params,
-            "cache_dir": _config.output.cache_directory,
-            "cache_duration_hours": _config.output.cache_duration_hours,
-        }
-        if hasattr(_scraper, "_interleave_by_site"):
-            search_kwargs["interleave"] = interleave_sites
-
-        listings = _scraper.search_jobs(**search_kwargs)
-
+        listings = result_holder["listings"]
         analyzer = JobAnalyzer()
         analyzer.add_listings(listings)
 
@@ -100,16 +149,26 @@ def run_job_research(
         total = getattr(_scraper, "total_found", len(listings))
         if total > len(listings):
             status = (
-                f"Search completed! Showing {len(listings)} of {total} found listings. "
-                f"Increase MAX_JOBS_PER_SEARCH for more. Saved to {filename}"
+                f"**Done** — Showing {len(listings)} of {total} found listings. "
+                f"Increase `MAX_JOBS_PER_SEARCH` for more. Saved to `{filename}`"
             )
         else:
-            status = f"Search completed! Found {len(listings)} listings. Saved to {filename}"
-        return (status, report, str(filepath))
+            status = f"**Done** — Found {len(listings)} listings. Saved to `{filename}`"
+
+        # Wrap CSV in a code fence so it renders in Markdown
+        if output_format == "csv":
+            report_md = f"```\n{report}\n```"
+        else:
+            report_md = report
+
+        yield (status, handler.get_all(), report_md, str(filepath))
 
     except Exception as e:
         logger.exception("run_job_research failed")
-        return (f"Error: {str(e)}", "", None)
+        yield (f"**Error:** {e}", handler.get_all(), "", None)
+
+    finally:
+        root_logger.removeHandler(handler)
 
 
 def create_ui() -> gr.Blocks:
@@ -183,25 +242,14 @@ def create_ui() -> gr.Blocks:
 
                 search_btn = gr.Button("Search Jobs", variant="primary", size="lg")
 
-                status_output = gr.Textbox(
-                    label="Status",
-                    interactive=False,
-                    lines=1,
-                )
+                status_output = gr.Markdown(value="")
 
-            with gr.Tab("Results"):
-                results_output = gr.Textbox(
-                    label="Search Results",
-                    interactive=False,
-                    lines=20,
-                    max_lines=50,
-                    elem_classes="results-box",
-                )
+                with gr.Accordion("Search Log", open=False):
+                    log_output = gr.Code(language=None, lines=12)
 
-                download_file = gr.File(
-                    label="Download Results",
-                    visible=False,
-                )
+                results_output = gr.Markdown(value="")
+
+                download_file = gr.File(label="Download Results")
 
             with gr.Tab("Info"):
                 gr.Markdown("""
@@ -241,7 +289,7 @@ def create_ui() -> gr.Blocks:
         search_btn.click(
             fn=run_job_research,
             inputs=[keywords, location, work_type, seniority, salary_min, salary_max, output_format, interleave_sites],
-            outputs=[status_output, results_output, download_file],
+            outputs=[status_output, log_output, results_output, download_file],
         )
 
     return demo

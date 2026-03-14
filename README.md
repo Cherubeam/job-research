@@ -62,9 +62,9 @@ Opens at **http://127.0.0.1:7860**
 
 ### Web Interface
 
-1. **Search Tab**: Enter keywords, location, work type, seniority, salary range
-2. **Click "Search Jobs"** — results via Claude web search (~10-30s first time, <1s cached)
-3. **Results Tab**: View report, export to CSV or Markdown
+1. Enter keywords, location, work type, seniority, and salary range
+2. **Click "Search Jobs"** — a live status line and expandable log panel show progress
+3. Results render inline as formatted Markdown (or CSV in a code block) with a download link
 
 ### Configuration
 
