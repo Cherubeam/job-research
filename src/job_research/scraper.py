@@ -12,6 +12,7 @@ import anthropic
 from pydantic import ValidationError
 
 from job_research.analyzer import JobListing
+from job_research.boards import get_adapter
 from job_research.config import JobBoardConfig, JobSearchParams
 from job_research.utils import create_cache_key, load_cache, save_cache
 
@@ -201,26 +202,62 @@ class ClaudeScraper:
         return urls
 
     @staticmethod
-    def _filter_to_search_results(
-        listings: list[JobListing], search_urls: set[str]
+    def _validate_listing_urls(
+        listings: list[JobListing],
+        search_urls: set[str],
+        boards: list[str],
     ) -> list[JobListing]:
-        """Keep only listings whose job_url appears in the search results."""
+        """Keep only listings whose URL is in search results AND matches a job URL pattern."""
         if not search_urls:
-            logger.warning("No search result URLs to cross-reference — skipping filter")
+            logger.warning("No search result URLs — skipping validation")
             return listings
+
         normalized_search = {ClaudeScraper._normalize_url(u) for u in search_urls}
+        adapters = [get_adapter(d) for d in boards]
+
         kept = []
         for listing in listings:
-            if listing.job_url and ClaudeScraper._normalize_url(listing.job_url) in normalized_search:
+            if not listing.job_url:
+                continue
+            norm_url = ClaudeScraper._normalize_url(listing.job_url)
+            in_search = norm_url in normalized_search
+            matches_pattern = any(a.is_job_listing_url(listing.job_url) for a in adapters)
+
+            if in_search and matches_pattern:
                 kept.append(listing)
+            elif in_search:
+                logger.info("Skipped search-page URL: %s", listing.job_url)
+            else:
+                logger.info("Skipped fabricated URL: %s", listing.job_url)
+
         discarded = len(listings) - len(kept)
-        logger.info(
-            "Kept %d/%d listings (discarded %d with fabricated URLs)",
-            len(kept), len(listings), discarded,
-        )
-        if discarded > 0 and not kept:
-            logger.warning("All listings had fabricated URLs — none matched search results")
+        logger.info("Validated %d/%d listings (%d discarded)", len(kept), len(listings), discarded)
         return kept
+
+    def _build_system_prompt(self) -> str:
+        """Build the system prompt with platform-specific search guidance."""
+        platform_hints = "\n".join(
+            f"- {get_adapter(d).search_hint}" for d in self._boards
+        )
+        return (
+            "You are a job search assistant. Search German job boards using the "
+            "web_search tool. You have up to 10 searches — use them strategically:\n\n"
+            "1. Start with a broad search to find relevant pages.\n"
+            "2. If results are search/category pages (listing multiple jobs), do "
+            "follow-up searches for individual job listing pages.\n"
+            "3. Extract job listings ONLY from actual search results — never invent.\n\n"
+            f"Platform-specific guidance:\n{platform_hints}\n\n"
+            "Return a JSON array (no markdown fences, no commentary). Each element:\n"
+            "  title (string), company (string), location (string),\n"
+            "  salary_min (integer or null), salary_max (integer or null),\n"
+            "  work_type (string), job_board (string), job_url (string).\n\n"
+            "Rules:\n"
+            "- job_url MUST point to an individual job listing page, not a search results page.\n"
+            "- Use the EXACT URL from the search result for job_url.\n"
+            "- Set salary fields to null unless the search result explicitly states a salary.\n"
+            "- If you found fewer listings, return fewer. Do not pad results.\n"
+            "- Never invent job listings. Only extract jobs explicitly mentioned in search results."
+        )
 
     def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
@@ -234,20 +271,7 @@ class ClaudeScraper:
                 "country": "DE",
             },
         }]
-        system = (
-            "You are a job search assistant. Search German job boards using the "
-            "web_search tool. Then extract job listings ONLY from the search results "
-            "you received — never invent or fabricate listings.\n\n"
-            "Return a JSON array (no markdown fences, no commentary). Each element:\n"
-            "  title (string), company (string), location (string),\n"
-            "  salary_min (integer or null), salary_max (integer or null),\n"
-            "  work_type (string), job_board (string), job_url (string).\n\n"
-            "Rules:\n"
-            "- Use the EXACT URL from the search result for job_url.\n"
-            "- Set salary fields to null unless the search result explicitly states a salary.\n"
-            "- If you found fewer listings, return fewer. Do not pad results.\n"
-            "- Only include results that are individual job postings, not search result pages."
-        )
+        system = self._build_system_prompt()
         user_message = f"Search for {query} job listings and extract what you find"
         messages = [{"role": "user", "content": user_message}]
         response = self._make_api_call(messages, tools=tools, system=system)
@@ -303,7 +327,7 @@ class ClaudeScraper:
         if skipped:
             logger.info("Skipped %d/%d items (validation failed)", skipped, len(data))
 
-        listings = self._filter_to_search_results(listings, search_urls)
+        listings = self._validate_listing_urls(listings, search_urls, self._boards)
 
         return listings, len(data)
 
