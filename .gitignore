@@ -58,6 +58,9 @@ data/results/*.csv
 data/results/*.json
 data/cache/*.json
 
+# Docs
+docs/_build/*.md
+
 # Logs
 *.log
 logs/
