@@ -88,7 +88,7 @@ class TestParameterMapping:
         assert mock_scrape.call_args[1]["site_name"] == ["indeed", "linkedin"]
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
-    def test_overfetch_requests_double(
+    def test_overfetch_requests_1_5x(
         self, mock_scrape, scraper: JobSpyScraper, sample_jobspy_dataframe: pd.DataFrame
     ) -> None:
         mock_scrape.return_value = sample_jobspy_dataframe
@@ -96,7 +96,7 @@ class TestParameterMapping:
 
         scraper._scrape(params)
 
-        assert mock_scrape.call_args[1]["results_wanted"] == 40  # 20 * 2
+        assert mock_scrape.call_args[1]["results_wanted"] == 30  # int(20 * 1.5)
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
     def test_all_of_germany_maps_to_germany(
@@ -437,6 +437,36 @@ class TestSearchJobsCache:
         listings = small_scraper.search_jobs(params, tmp_cache_dir)
 
         assert len(listings) == 2
+
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_total_found_reflects_pre_truncation_count(
+        self,
+        mock_scrape,
+        tmp_cache_dir: Path,
+    ) -> None:
+        small_scraper = JobSpyScraper(max_jobs=2, country="Germany")
+        df = pd.DataFrame(
+            {
+                "site": ["indeed"] * 5,
+                "title": [f"AI Engineer {i}" for i in range(5)],
+                "company": [f"Company{i}" for i in range(5)],
+                "location": ["Berlin"] * 5,
+                "min_amount": [np.nan] * 5,
+                "max_amount": [np.nan] * 5,
+                "job_url": [f"https://example.com/{i}" for i in range(5)],
+                "description": ["desc"] * 5,
+                "date_posted": [np.nan] * 5,
+                "is_remote": [False] * 5,
+                "job_type": [np.nan] * 5,
+            }
+        )
+        mock_scrape.return_value = df
+        params = JobSearchParams(keywords="AI Engineer", location="Berlin")
+
+        listings = small_scraper.search_jobs(params, tmp_cache_dir)
+
+        assert len(listings) == 2
+        assert small_scraper.total_found == 5
 
 
 class TestDeduplication:

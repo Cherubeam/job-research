@@ -13,7 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Title relevance filtering — rejects results that don't match search keywords (e.g. "Shopify Backend Developer" when searching "AI Engineer").
 - Title+company deduplication — collapses identical job postings across locations (e.g. Amazon intern spam).
 - Work type mapping from JobSpy's `is_remote`/`job_type` columns → human-readable display strings.
-- 2x overfetch to compensate for filtering, then truncate to `max_jobs`.
+- 1.5x overfetch to compensate for filtering, then truncate to `max_jobs`.
+- Truncation notice in UI status message when results are cut (e.g. "Showing 200 of 250 found listings").
+- `total_found` attribute on `JobSpyScraper` — reflects pre-truncation count after each search.
+- Final site distribution logged after truncation for debugging multi-source balance.
+
+### Changed
+- Default `MAX_JOBS_PER_SEARCH` raised from 20 to 200 — ensures both Indeed and LinkedIn results are naturally represented without interleaving.
 - `scripts/eval_direct_scraper.py` — eval script for JobSpyScraper with optional Claude side-by-side comparison.
 - 42 new tests for JobSpyScraper (relevance filtering, dedup, work type mapping, parameter mapping, caching).
 

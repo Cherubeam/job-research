@@ -92,7 +92,14 @@ def run_job_research(
         filepath.write_text(report, encoding="utf-8")
         logger.info("Report saved to %s", filepath)
 
-        status = f"Search completed! Found {analyzer.get_total_count()} listings. Saved to {filename}"
+        total = getattr(_scraper, "total_found", len(listings))
+        if total > len(listings):
+            status = (
+                f"Search completed! Showing {len(listings)} of {total} found listings. "
+                f"Increase MAX_JOBS_PER_SEARCH for more. Saved to {filename}"
+            )
+        else:
+            status = f"Search completed! Found {len(listings)} listings. Saved to {filename}"
         return (status, report, str(filepath))
 
     except Exception as e:

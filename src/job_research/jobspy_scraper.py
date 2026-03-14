@@ -2,6 +2,7 @@
 
 import logging
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +36,7 @@ class JobSpyScraper:
     def __init__(self, max_jobs: int = 20, country: str = "Germany") -> None:
         self._max_jobs = max_jobs
         self._country = country
+        self.total_found: int = 0
 
     def search_jobs(
         self,
@@ -64,7 +66,18 @@ class JobSpyScraper:
         if before_dedup != len(listings):
             logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
 
+        self.total_found = len(listings)
         listings = listings[: self._max_jobs]
+
+        if self.total_found > self._max_jobs:
+            logger.info(
+                "Showing %d of %d found listings. Increase MAX_JOBS_PER_SEARCH for more.",
+                self._max_jobs,
+                self.total_found,
+            )
+
+        site_dist = Counter(lst.job_board for lst in listings)
+        logger.info("Final site distribution: %s", dict(site_dist))
 
         if not listings:
             raise RuntimeError(
@@ -93,7 +106,7 @@ class JobSpyScraper:
             "search_term": search_term,
             "location": location,
             "country_indeed": self._country,
-            "results_wanted": self._max_jobs * 2,
+            "results_wanted": int(self._max_jobs * 1.5),
             "linkedin_fetch_description": True,
             "verbose": 2,
         }
