@@ -412,39 +412,58 @@ class TestExtractSearchResultUrls:
         assert urls == set()
 
 
-class TestFilterToSearchResults:
-    def test_keeps_matching_urls(self):
+class TestValidateListingUrls:
+    def test_keeps_valid_job_url_in_search_results(self):
         listings = [
-            JobListing(title="Job A", job_url="https://example.com/1"),
-            JobListing(title="Job B", job_url="https://example.com/2"),
+            JobListing(title="Job A", job_url="https://de.indeed.com/viewjob?jk=abc"),
+            JobListing(title="Job B", job_url="https://de.indeed.com/viewjob?jk=def"),
         ]
-        search_urls = {"https://example.com/1", "https://example.com/2"}
-        result = ClaudeScraper._filter_to_search_results(listings, search_urls)
+        search_urls = {
+            "https://de.indeed.com/viewjob?jk=abc",
+            "https://de.indeed.com/viewjob?jk=def",
+        }
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
         assert len(result) == 2
 
-    def test_discards_fabricated_urls(self):
+    def test_discards_search_page_url(self):
+        """URL is in search results but doesn't match job URL pattern."""
         listings = [
-            JobListing(title="Real", job_url="https://example.com/1"),
-            JobListing(title="Fake", job_url="https://fake.com/nope"),
+            JobListing(title="Search Page", job_url="https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"),
         ]
-        search_urls = {"https://example.com/1"}
-        result = ClaudeScraper._filter_to_search_results(listings, search_urls)
-        assert len(result) == 1
-        assert result[0].title == "Real"
+        search_urls = {"https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"}
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        assert len(result) == 0
 
-    def test_normalizes_trailing_slash(self):
+    def test_discards_fabricated_url(self):
+        """URL is not in search results at all."""
         listings = [
-            JobListing(title="Job", job_url="https://example.com/1/"),
+            JobListing(title="Fake", job_url="https://de.indeed.com/viewjob?jk=fake"),
         ]
-        search_urls = {"https://example.com/1"}
-        result = ClaudeScraper._filter_to_search_results(listings, search_urls)
-        assert len(result) == 1
+        search_urls = {"https://de.indeed.com/viewjob?jk=real"}
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        assert len(result) == 0
 
-    def test_skips_filter_when_no_search_urls(self):
+    def test_discards_empty_url(self):
+        listings = [
+            JobListing(title="No URL", job_url=""),
+        ]
+        search_urls = {"https://de.indeed.com/viewjob?jk=abc"}
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        assert len(result) == 0
+
+    def test_skips_validation_when_no_search_urls(self):
         listings = [
             JobListing(title="Job", job_url="https://example.com/1"),
         ]
-        result = ClaudeScraper._filter_to_search_results(listings, set())
+        result = ClaudeScraper._validate_listing_urls(listings, set(), ["indeed.de"])
+        assert len(result) == 1
+
+    def test_normalizes_trailing_slash(self):
+        listings = [
+            JobListing(title="Job", job_url="https://www.stepstone.de/jobs/12345/"),
+        ]
+        search_urls = {"https://www.stepstone.de/jobs/12345"}
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["stepstone.de"])
         assert len(result) == 1
 
 
