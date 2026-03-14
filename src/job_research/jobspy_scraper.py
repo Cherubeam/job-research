@@ -43,6 +43,7 @@ class JobSpyScraper:
         params: JobSearchParams,
         cache_dir: Path,
         cache_duration_hours: int = 24,
+        interleave: bool = True,
     ) -> list[JobListing]:
         """Search for jobs matching *params*, using a local cache."""
         cache_key = create_cache_key(
@@ -65,6 +66,9 @@ class JobSpyScraper:
         listings = self._deduplicate(listings)
         if before_dedup != len(listings):
             logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
+
+        if interleave:
+            listings = self._interleave_by_site(listings)
 
         self.total_found = len(listings)
         listings = listings[: self._max_jobs]
@@ -120,7 +124,7 @@ class JobSpyScraper:
                 "Scraping Indeed+LinkedIn: search_term=%r, location=%r, max=%d",
                 search_term,
                 location,
-                self._max_jobs * 2,
+                int(self._max_jobs * 1.5),
             )
             df = scrape_jobs(**kwargs)
         except Exception as exc:
@@ -252,6 +256,29 @@ class JobSpyScraper:
         except ValidationError:
             logger.info("Skipped invalid row: %.100s", title)
             return None
+
+    @staticmethod
+    def _interleave_by_site(listings: list[JobListing]) -> list[JobListing]:
+        """Interleave listings from different job boards for balanced representation."""
+        from collections import defaultdict
+
+        by_site: dict[str, list[JobListing]] = defaultdict(list)
+        for listing in listings:
+            by_site[listing.job_board or "unknown"].append(listing)
+
+        result: list[JobListing] = []
+        site_iters = [iter(jobs) for jobs in by_site.values()]
+        while site_iters:
+            exhausted = []
+            for i, it in enumerate(site_iters):
+                val = next(it, None)
+                if val is not None:
+                    result.append(val)
+                else:
+                    exhausted.append(i)
+            for i in reversed(exhausted):
+                site_iters.pop(i)
+        return result
 
     @staticmethod
     def _deduplicate(listings: list[JobListing]) -> list[JobListing]:

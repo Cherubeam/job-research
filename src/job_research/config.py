@@ -98,6 +98,7 @@ class Config:
     claude_api_key: Optional[str] = None
     claude_model: str = "claude-haiku-4-5-20251001"
     max_jobs_per_search: int = 200
+    interleave_sites: bool = True
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -140,6 +141,7 @@ class Config:
             claude_api_key=os.getenv("CLAUDE_API_KEY"),
             claude_model=os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
             max_jobs_per_search=int(os.getenv("MAX_JOBS_PER_SEARCH", "200")),
+            interleave_sites=os.getenv("INTERLEAVE_SITES", "true").lower() == "true",
         )
 
     @classmethod

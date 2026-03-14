@@ -41,6 +41,7 @@ def run_job_research(
     salary_min: int,
     salary_max: int,
     output_format: str,
+    interleave_sites: bool = True,
 ) -> tuple[str, str, str | None]:
     """Run job research with given parameters. Returns (status, report, filepath)."""
     try:
@@ -69,11 +70,15 @@ def run_job_research(
         _config.search_params.salary_maximum = salary_max
         _config.output.output_format = OutputFormat(output_format)
 
-        listings = _scraper.search_jobs(
-            _config.search_params,
-            _config.output.cache_directory,
-            _config.output.cache_duration_hours,
-        )
+        search_kwargs: dict = {
+            "params": _config.search_params,
+            "cache_dir": _config.output.cache_directory,
+            "cache_duration_hours": _config.output.cache_duration_hours,
+        }
+        if hasattr(_scraper, "_interleave_by_site"):
+            search_kwargs["interleave"] = interleave_sites
+
+        listings = _scraper.search_jobs(**search_kwargs)
 
         analyzer = JobAnalyzer()
         analyzer.add_listings(listings)
@@ -171,6 +176,11 @@ def create_ui() -> gr.Blocks:
                         value="markdown",
                     )
 
+                    interleave_sites = gr.Checkbox(
+                        label="Interleave results from different job boards",
+                        value=_config.interleave_sites,
+                    )
+
                 search_btn = gr.Button("Search Jobs", variant="primary", size="lg")
 
                 status_output = gr.Textbox(
@@ -230,7 +240,7 @@ def create_ui() -> gr.Blocks:
 
         search_btn.click(
             fn=run_job_research,
-            inputs=[keywords, location, work_type, seniority, salary_min, salary_max, output_format],
+            inputs=[keywords, location, work_type, seniority, salary_min, salary_max, output_format, interleave_sites],
             outputs=[status_output, results_output, download_file],
         )
 

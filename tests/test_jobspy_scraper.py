@@ -550,6 +550,50 @@ class TestWorkTypeMapping:
         assert is_remote is False
 
 
+class TestInterleave:
+    """Tests site interleaving."""
+
+    def test_interleave_by_site(self) -> None:
+        listings = [
+            JobListing(title="A1", company="X", job_board="Indeed"),
+            JobListing(title="A2", company="Y", job_board="Indeed"),
+            JobListing(title="A3", company="Z", job_board="Indeed"),
+            JobListing(title="B1", company="P", job_board="Linkedin"),
+            JobListing(title="B2", company="Q", job_board="Linkedin"),
+        ]
+
+        result = JobSpyScraper._interleave_by_site(listings)
+
+        boards = [r.job_board for r in result]
+        assert boards == ["Indeed", "Linkedin", "Indeed", "Linkedin", "Indeed"]
+
+    def test_interleave_preserves_order_within_site(self) -> None:
+        listings = [
+            JobListing(title="A1", company="X", job_board="Indeed"),
+            JobListing(title="A2", company="Y", job_board="Indeed"),
+            JobListing(title="B1", company="P", job_board="Linkedin"),
+            JobListing(title="B2", company="Q", job_board="Linkedin"),
+        ]
+
+        result = JobSpyScraper._interleave_by_site(listings)
+
+        indeed = [r.title for r in result if r.job_board == "Indeed"]
+        linkedin = [r.title for r in result if r.job_board == "Linkedin"]
+        assert indeed == ["A1", "A2"]
+        assert linkedin == ["B1", "B2"]
+
+    def test_interleave_single_site(self) -> None:
+        listings = [
+            JobListing(title="A1", company="X", job_board="Indeed"),
+            JobListing(title="A2", company="Y", job_board="Indeed"),
+        ]
+
+        result = JobSpyScraper._interleave_by_site(listings)
+
+        assert len(result) == 2
+        assert [r.title for r in result] == ["A1", "A2"]
+
+
 class TestBuildKeywordTokens:
     """Tests keyword tokenization."""
 

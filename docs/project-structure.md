@@ -58,7 +58,7 @@ The project is organized into three main layers:
 - `JobSearchParams` - Data structure for search parameters (keywords, location, salary, etc.)
 - `JobBoardConfig` - Which job boards to search
 - `OutputConfig` - Output settings (format, directory, caching)
-- `Config` - Main configuration class (includes `claude_api_key`, `claude_model`, `max_jobs_per_search`)
+- `Config` - Main configuration class (includes `claude_api_key`, `claude_model`, `max_jobs_per_search`, `interleave_sites`)
 
 ---
 

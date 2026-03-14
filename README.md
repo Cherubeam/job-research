@@ -9,6 +9,7 @@ A Python-based job market research tool with a Gradio UI for searching and analy
 - **Flexible Filters**: Filter by location, salary range, seniority level, and work type
 - **Data Analysis**: Automatic salary analysis, job distribution, and market insights
 - **Multiple Export Formats**: Generate reports in Markdown or CSV
+- **Multi-Source Interleaving**: Results from Indeed and LinkedIn are round-robin mixed for balanced representation (configurable)
 - **Smart Caching**: 24h cache reduces API calls for repeated searches
 - **Web Interface**: User-friendly Gradio UI
 
@@ -65,7 +66,8 @@ CLAUDE_API_KEY=sk-ant-...
 
 # Optional
 CLAUDE_MODEL=claude-haiku-4-5-20251001
-MAX_JOBS_PER_SEARCH=20         # soft cap; actual count depends on search results
+MAX_JOBS_PER_SEARCH=200        # max results to show (default 200)
+INTERLEAVE_SITES=true          # mix results from different job boards
 JOB_KEYWORDS=AI Engineer
 LOCATION=All of Germany
 WORK_TYPE=Remote/Hybrid

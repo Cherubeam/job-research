@@ -193,10 +193,11 @@ app.py: selects JobSpyScraper based on config
 jobspy_scraper.py: JobSpyScraper.search_jobs()
     ├─ Check cache (utils.load_cache)
     ├─ _scrape() → jobspy.scrape_jobs(site_name=["indeed", "linkedin"], ...)
-    │   ├─ Overfetch 2x results_wanted
+    │   ├─ Overfetch 1.5x results_wanted
     │   ├─ _to_job_listing() — DataFrame row → JobListing (maps work_type, job_board)
     │   └─ _is_relevant() — title token matching against keywords + alternatives
     ├─ _deduplicate() — URL + title+company dedup
+    ├─ _interleave_by_site() — round-robin mix (if enabled)
     ├─ Truncate to max_jobs
     └─ Save cache (utils.save_cache)
     ↓
@@ -211,13 +212,16 @@ Raw JobSpy results contain irrelevant titles and duplicates. Three post-processi
 
 2. **Title+company deduplication** (`_deduplicate()`): Groups by `(title.lower(), company.lower())` — same job posted in multiple locations (with different URLs) is kept only once. Also deduplicates by exact URL.
 
-3. **Overfetch + truncate**: Requests `max_jobs * 2` from JobSpy to compensate for filtering losses, then truncates to `max_jobs`.
+3. **Overfetch + truncate**: Requests `max_jobs * 1.5` from JobSpy to compensate for filtering losses, then truncates to `max_jobs`.
+
+4. **Site interleaving** (`_interleave_by_site()`): Round-robin interleaves listings from different job boards before truncation. Without this, the site returning more results (typically Indeed) dominates the output. Configurable via `INTERLEAVE_SITES` env var (default: true) and a UI checkbox.
 
 ### 6.4 Configuration
 
 ```bash
 SCRAPER_BACKEND=jobspy           # or "claude" (default)
-MAX_JOBS_PER_SEARCH=20           # passed to results_wanted (internally 2x)
+MAX_JOBS_PER_SEARCH=200          # passed to results_wanted (internally 1.5x)
+INTERLEAVE_SITES=true            # round-robin mix results from different sites (default: true)
 ```
 
 No API key needed for the `jobspy` backend.

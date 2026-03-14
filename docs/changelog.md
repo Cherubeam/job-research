@@ -18,8 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `total_found` attribute on `JobSpyScraper` — reflects pre-truncation count after each search.
 - Final site distribution logged after truncation for debugging multi-source balance.
 
+- Configurable site interleaving (`INTERLEAVE_SITES=true` env var + UI checkbox) — round-robin mixes results from Indeed and LinkedIn before truncation so both sources are represented.
+
 ### Changed
-- Default `MAX_JOBS_PER_SEARCH` raised from 20 to 200 — ensures both Indeed and LinkedIn results are naturally represented without interleaving.
+- Default `MAX_JOBS_PER_SEARCH` raised from 20 to 200.
 - `scripts/eval_direct_scraper.py` — eval script for JobSpyScraper with optional Claude side-by-side comparison.
 - 42 new tests for JobSpyScraper (relevance filtering, dedup, work type mapping, parameter mapping, caching).
 
