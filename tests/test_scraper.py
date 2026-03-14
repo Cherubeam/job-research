@@ -149,24 +149,82 @@ def test_disabled_board_excluded_from_boards(sample_job_search_params):
 
 # ---------------------------------------------------------- API call (mocked)
 
-def test_make_api_call_retries_on_error(scraper):
+def test_make_api_call_retries_on_server_error(scraper):
+    """Non-429 APIStatusError uses short exponential backoff."""
     import anthropic as anthropic_module
 
     mock_client = MagicMock()
     scraper._client = mock_client
 
     error = anthropic_module.APIStatusError(
-        "rate limit", response=MagicMock(status_code=429), body={}
+        "server error", response=MagicMock(status_code=500), body={}
     )
     success_response = MagicMock()
     success_response.content = []
     mock_client.messages.create.side_effect = [error, success_response]
 
-    with patch("job_research.scraper.time.sleep"):
+    with patch("job_research.scraper.time.sleep") as mock_sleep:
         result = scraper._make_api_call([{"role": "user", "content": "test"}])
 
     assert mock_client.messages.create.call_count == 2
     assert result is success_response
+    # First attempt backoff: 2**0 = 1s
+    mock_sleep.assert_any_call(1)
+
+
+def test_make_api_call_rate_limit_uses_retry_after_header(scraper):
+    """429 RateLimitError reads retry-after header for sleep duration."""
+    import anthropic as anthropic_module
+
+    mock_client = MagicMock()
+    scraper._client = mock_client
+
+    response_mock = MagicMock(status_code=429)
+    response_mock.headers = {"retry-after": "30"}
+    error = anthropic_module.RateLimitError(
+        "rate limited", response=response_mock, body={}
+    )
+    success_response = MagicMock()
+    success_response.content = []
+    mock_client.messages.create.side_effect = [error, success_response]
+
+    with patch("job_research.scraper.time.sleep") as mock_sleep:
+        result = scraper._make_api_call([{"role": "user", "content": "test"}])
+
+    assert mock_client.messages.create.call_count == 2
+    assert result is success_response
+    mock_sleep.assert_any_call(30)
+
+
+def test_make_api_call_rate_limit_defaults_to_60s(scraper):
+    """429 without retry-after header defaults to 60s sleep."""
+    import anthropic as anthropic_module
+
+    mock_client = MagicMock()
+    scraper._client = mock_client
+
+    response_mock = MagicMock(status_code=429)
+    response_mock.headers = {}
+    error = anthropic_module.RateLimitError(
+        "rate limited", response=response_mock, body={}
+    )
+    success_response = MagicMock()
+    success_response.content = []
+    mock_client.messages.create.side_effect = [error, success_response]
+
+    with patch("job_research.scraper.time.sleep") as mock_sleep:
+        result = scraper._make_api_call([{"role": "user", "content": "test"}])
+
+    assert mock_client.messages.create.call_count == 2
+    assert result is success_response
+    mock_sleep.assert_any_call(60)
+
+
+def test_client_created_with_max_retries_zero():
+    """Anthropic client is initialized with max_retries=0 to disable SDK retries."""
+    with patch("job_research.scraper.anthropic.Anthropic") as mock_anthropic:
+        ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")
+    mock_anthropic.assert_called_once_with(api_key="sk-test", max_retries=0)
 
 
 def test_search_jobs_raises_on_exception(scraper, sample_job_search_params, tmp_cache_dir):

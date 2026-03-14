@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Scraper now retries with a follow-up turn when the model returns narrative text instead of JSON, instead of immediately failing with `RuntimeError`
+- Fix follow-up retry hitting rate limits: disable SDK's internal retry (`max_retries=0`), handle 429s with `retry-after` header (default 60s backoff) instead of 1–4s exponential backoff
 
 ### Removed
 - xing.com from job boards — domain blocks Anthropic's web crawler, incompatible with `allowed_domains`

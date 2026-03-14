@@ -46,7 +46,7 @@ class ClaudeScraper:
         max_jobs: int = 20,
         board_config: Optional[JobBoardConfig] = None,
     ) -> None:
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(api_key=api_key, max_retries=0)
         self._model = model
         self._max_jobs = max_jobs
         self._last_call_time: float = 0.0
@@ -113,6 +113,16 @@ class ClaudeScraper:
             time.sleep(2.0 - elapsed)
         self._last_call_time = time.time()
 
+    def _get_retry_after(self, exc: anthropic.RateLimitError) -> int:
+        """Parse retry-after header from a 429 response, defaulting to 60s."""
+        retry_after = exc.response.headers.get("retry-after")
+        if retry_after:
+            try:
+                return max(int(float(retry_after)), 1)
+            except (ValueError, TypeError):
+                pass
+        return 60
+
     def _make_api_call(
         self,
         messages: list[dict],
@@ -133,6 +143,15 @@ class ClaudeScraper:
                 if system:
                     kwargs["system"] = system
                 return self._client.messages.create(**kwargs)
+            except anthropic.RateLimitError as exc:
+                if attempt == 2:
+                    raise
+                retry_after = self._get_retry_after(exc)
+                logger.warning(
+                    "Rate limited (attempt %d) — retrying in %ds",
+                    attempt + 1, retry_after,
+                )
+                time.sleep(retry_after)
             except anthropic.APIStatusError as exc:
                 if attempt == 2:
                     raise
