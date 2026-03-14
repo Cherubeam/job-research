@@ -6,16 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Search results were entirely fabricated — Claude ignored web_search results and generated fake URLs/data. Now cross-references output against actual search result URLs and discards fabricated listings.
+### Added
+- Platform adapters (`boards.py`) with per-board URL patterns for deterministic job listing validation — distinguishes individual job pages from search/category pages.
+- `scripts/eval_search_quality.py` — standalone eval script measuring URL match rate and field coverage, now with adapter-based URL classification.
 
 ### Changed
+- System prompt instructs Claude to use multiple searches strategically to find individual job listing pages (not just search/category pages).
+- URL validation uses platform-specific patterns (dual check: URL must be in search results AND match a job URL pattern) instead of exact URL matching only.
 - Default board config: only Indeed.de enabled (others can be re-enabled via UI). Reduces scope for higher-quality results.
 - Prompt no longer requests a specific result count — returns however many real listings are found.
 - Salary fields default to null unless explicitly stated in search results.
 
-### Added
-- `scripts/eval_search_quality.py` — standalone eval script measuring URL match rate and field coverage.
+### Fixed
+- Search results were entirely fabricated — Claude ignored web_search results and generated fake URLs/data. Now cross-references output against actual search result URLs and discards fabricated listings.
+- Zero search results when `web_search` returns Indeed search/category page URLs instead of individual job pages — new validation correctly identifies and skips these.
 
 ### Fixed
 - Scraper now retries with a follow-up turn when the model returns narrative text instead of JSON, instead of immediately failing with `RuntimeError`

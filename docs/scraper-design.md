@@ -36,8 +36,9 @@ scraper.py: ClaudeScraper.search_jobs()
     ├─ Check cache (utils.load_cache)
     ├─ _build_search_query() — format search terms
     ├─ _search_and_extract() — single API call: web search + JSON extraction
+    │   ├─ _build_system_prompt() — platform-specific search guidance
     │   ├─ _extract_search_result_urls() — ground-truth URLs
-    │   └─ _filter_to_search_results() — discard fabricated URLs
+    │   └─ _validate_listing_urls() — dual check: in search results + job URL pattern
     ├─ _deduplicate_listings()
     └─ Save cache (utils.save_cache)
     ↓
@@ -59,15 +60,23 @@ User sees results
 - Strips accidental markdown fences; falls back to regex `\[.*\]` extraction if direct `json.loads` fails
 - Each extracted item is validated via Pydantic `JobListing(**item)` — invalid items are skipped with a log message
 
-### 2.3 URL Cross-Referencing
+### 2.3 URL Validation with Platform Adapters
 
-The API response contains `web_search_tool_result` blocks with real URLs from the search. After extracting Claude's JSON output:
+The API response contains `web_search_tool_result` blocks with real URLs from the search. However, not all search result URLs are individual job listings — many are search/category pages (e.g., `indeed.de/AI-Engineer-Jobs-in-Berlin`). After extracting Claude's JSON output, validation applies a dual check:
 
 1. `_extract_search_result_urls()` collects all URLs from `web_search_tool_result` blocks as ground truth
-2. `_filter_to_search_results()` discards any listing whose `job_url` doesn't match a ground-truth URL
+2. `_validate_listing_urls()` keeps only listings that pass **both** checks:
+   - **In search results:** the `job_url` matches a ground-truth URL (prevents fabrication)
+   - **Matches job URL pattern:** the URL matches the platform adapter's individual job page pattern (prevents search-page URLs from being treated as listings)
 3. URL normalization strips fragments and trailing slashes while preserving query params
 
-This prevents Claude from fabricating plausible-looking URLs that don't correspond to real search results.
+Platform adapters (`boards.py`) define per-board URL patterns:
+- **Indeed:** `/viewjob`, `/rc/clk`, `/jobs?` — rejects `/AI-Engineer-Jobs-in-Berlin`
+- **StepStone:** `/stellenangebote--`, `/jobs/<id>` — rejects search listing pages
+- **LinkedIn:** `/jobs/view/<id>` — rejects `/jobs/search/`
+- **Fallback:** unknown boards accept any URL on their domain
+
+The system prompt also includes platform-specific guidance so Claude uses follow-up searches to find individual job pages when initial results return only search/category pages.
 
 ### 2.4 Board Coverage
 
