@@ -95,9 +95,27 @@ def main() -> None:
     data = scraper._extract_json(text)
 
     if data is None:
-        print("ERROR: Could not parse JSON from response")
-        print(f"Raw text: {raw_text[:500]}")
-        sys.exit(1)
+        print("WARNING: Response was not JSON, sending follow-up extraction request...")
+        follow_up_messages = [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": raw_text},
+            {"role": "user", "content": (
+                "Now output ONLY the JSON array of job listings you found. "
+                "No commentary, no markdown fences — just the raw JSON array."
+            )},
+        ]
+        retry_response = scraper._make_api_call(
+            follow_up_messages, max_tokens=4096, system=system
+        )
+        retry_text = "\n\n".join(
+            block.text for block in retry_response.content if block.type == "text"
+        )
+        retry_text = re.sub(r"```(?:json)?\s*", "", retry_text).strip().rstrip("`").strip()
+        data = scraper._extract_json(retry_text)
+        if data is None:
+            print("ERROR: Could not parse JSON from response after retry")
+            print(f"Raw text: {raw_text[:500]}")
+            sys.exit(1)
 
     print(f"=== Claude's output ({len(data)} listings) ===")
     normalized_search = {scraper._normalize_url(u) for u in search_urls}
