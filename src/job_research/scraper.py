@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol
 from urllib.parse import urlparse, urlunparse
 
 import anthropic
@@ -17,6 +17,18 @@ from job_research.config import JobBoardConfig, JobSearchParams
 from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
+
+
+class JobScraper(Protocol):
+    """Protocol for job scraper backends."""
+
+    def search_jobs(
+        self,
+        params: JobSearchParams,
+        cache_dir: Path,
+        cache_duration_hours: int = 24,
+    ) -> list[JobListing]: ...
+
 
 _JOB_BOARD_MAP: dict[str, str] = {
     "search_stepstone": "stepstone.de",

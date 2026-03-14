@@ -5,9 +5,10 @@ import os
 
 import gradio as gr
 
-from job_research.config import Config, OutputFormat, SeniorityLevel, WorkType
+from job_research.config import Config, OutputFormat, ScraperBackend, SeniorityLevel, WorkType
 from job_research.analyzer import JobAnalyzer
-from job_research.scraper import ClaudeScraper
+from job_research.indeed import IndeedDirectScraper
+from job_research.scraper import ClaudeScraper, JobScraper
 from job_research.utils import generate_output_filename
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -15,17 +16,21 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger(__name__)
 
 _config = Config.from_env()
-_scraper: ClaudeScraper | None = None
+_scraper: JobScraper | None = None
 try:
-    if _config.claude_api_key:
+    if _config.scraper_backend == ScraperBackend.INDEED_DIRECT:
+        _scraper = IndeedDirectScraper(max_jobs=_config.max_jobs_per_search)
+        logger.info("Using IndeedDirectScraper (no API key needed)")
+    elif _config.claude_api_key:
         _scraper = ClaudeScraper(
             api_key=_config.claude_api_key,
             model=_config.claude_model,
             max_jobs=_config.max_jobs_per_search,
             board_config=_config.job_boards,
         )
+        logger.info("Using ClaudeScraper")
 except Exception:
-    logger.exception("Failed to initialize ClaudeScraper")
+    logger.exception("Failed to initialize scraper")
 
 
 def run_job_research(
@@ -48,11 +53,11 @@ def run_job_research(
         if _scraper is None:
             return (
                 "Error: Scraper not initialized",
-                "CLAUDE_API_KEY is not set.\n\n"
-                "To fix:\n"
-                "1. Copy .env.example to .env\n"
-                "2. Set CLAUDE_API_KEY=your-key\n"
-                "3. Restart the app",
+                "No scraper backend is configured.\n\n"
+                "To fix, set SCRAPER_BACKEND in your .env file:\n"
+                "- SCRAPER_BACKEND=indeed_direct  (no API key needed)\n"
+                "- SCRAPER_BACKEND=claude          (requires CLAUDE_API_KEY)\n\n"
+                "For Claude backend, also set CLAUDE_API_KEY=your-key",
                 None,
             )
 

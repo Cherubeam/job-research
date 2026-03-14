@@ -32,6 +32,12 @@ class OutputFormat(str, Enum):
     JSON = "json"
 
 
+class ScraperBackend(str, Enum):
+    """Available scraper backends"""
+    CLAUDE = "claude"
+    INDEED_DIRECT = "indeed_direct"
+
+
 @dataclass
 class JobSearchParams:
     """Parameters for job search"""
@@ -88,6 +94,7 @@ class Config:
     job_boards: JobBoardConfig = field(default_factory=JobBoardConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     verbose: bool = False
+    scraper_backend: ScraperBackend = ScraperBackend.CLAUDE
     claude_api_key: Optional[str] = None
     claude_model: str = "claude-haiku-4-5-20251001"
     max_jobs_per_search: int = 20
@@ -127,6 +134,9 @@ class Config:
             job_boards=job_boards,
             output=output,
             verbose=os.getenv("VERBOSE", "false").lower() == "true",
+            scraper_backend=ScraperBackend(
+                os.getenv("SCRAPER_BACKEND", "claude")
+            ),
             claude_api_key=os.getenv("CLAUDE_API_KEY"),
             claude_model=os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
             max_jobs_per_search=int(os.getenv("MAX_JOBS_PER_SEARCH", "20")),
