@@ -106,9 +106,7 @@ class ClaudeScraper:
         query_parts = [params.keywords, f"in {params.location}"]
         if params.work_type.value not in ("Any",):
             query_parts.append(params.work_type.value)
-
-        site_clause = " OR ".join(f"site:{b}" for b in self._boards)
-        return f"{' '.join(query_parts)} ({site_clause})"
+        return " ".join(query_parts)
 
     def _rate_limit(self) -> None:
         elapsed = time.time() - self._last_call_time
@@ -121,6 +119,7 @@ class ClaudeScraper:
         messages: list[dict],
         tools: Optional[list[dict]] = None,
         max_tokens: int = 4096,
+        system: Optional[str] = None,
     ) -> anthropic.types.Message:
         self._rate_limit()
         for attempt in range(3):
@@ -132,6 +131,8 @@ class ClaudeScraper:
                 }
                 if tools:
                     kwargs["tools"] = tools
+                if system:
+                    kwargs["system"] = system
                 return self._client.messages.create(**kwargs)
             except anthropic.APIStatusError as exc:
                 if attempt == 2:
@@ -143,17 +144,28 @@ class ClaudeScraper:
 
     def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
-        tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]
-        prompt = (
-            f"Search for jobs: {query}\n\n"
-            f"Find approximately {self._max_jobs} job listings and return ONLY a JSON array. "
-            "No markdown fences, no prose — just the JSON array. "
+        tools = [{
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 10,
+            "allowed_domains": self._boards,
+            "user_location": {
+                "type": "approximate",
+                "country": "DE",
+            },
+        }]
+        system = (
+            "You are a job search assistant. Search German job boards using the "
+            "web_search tool, then return the results as a JSON array. "
+            "No markdown fences, no commentary — output only the JSON array. "
             "Each element must have these fields: "
-            "title, company, location, salary_min (integer or null), salary_max (integer or null), "
-            "work_type, job_board, job_url."
+            "title (string), company (string), location (string), "
+            "salary_min (integer or null), salary_max (integer or null), "
+            "work_type (string), job_board (string), job_url (string)."
         )
-        messages = [{"role": "user", "content": prompt}]
-        response = self._make_api_call(messages, tools=tools)
+        user_message = f"Find approximately {self._max_jobs} job listings for {query}"
+        messages = [{"role": "user", "content": user_message}]
+        response = self._make_api_call(messages, tools=tools, system=system)
 
         raw_text = "\n\n".join(
             block.text for block in response.content if block.type == "text"
@@ -164,6 +176,7 @@ class ClaudeScraper:
                 "The web search may have failed or returned only tool-use blocks."
             )
         logger.info("API response: %d chars of text", len(raw_text))
+        logger.debug("Raw API response text: %.500s", raw_text)
 
         # Strip markdown fences if present
         text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()

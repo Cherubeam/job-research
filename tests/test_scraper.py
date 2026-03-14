@@ -126,20 +126,25 @@ def test_build_search_query_contains_keywords(scraper, sample_job_search_params)
     assert "Berlin" in query
 
 
-def test_build_search_query_contains_job_boards(scraper, sample_job_search_params):
+def test_build_search_query_excludes_site_clause(scraper, sample_job_search_params):
     query = scraper._build_search_query(sample_job_search_params)
-    assert "stepstone.de" in query
-    assert "linkedin.com" in query
-    assert "arbeitsagentur.de" in query
+    assert "site:" not in query
 
 
-def test_disabled_board_excluded_from_query(sample_job_search_params):
+def test_active_boards_stored_on_scraper(sample_job_search_params):
+    with patch("job_research.scraper.anthropic.Anthropic"):
+        s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")
+    assert "stepstone.de" in s._boards
+    assert "linkedin.com" in s._boards
+    assert "arbeitsagentur.de" in s._boards
+
+
+def test_disabled_board_excluded_from_boards(sample_job_search_params):
     board_config = JobBoardConfig(search_stepstone=False)
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config)
-    query = s._build_search_query(sample_job_search_params)
-    assert "stepstone.de" not in query
-    assert "linkedin.com" in query
+    assert "stepstone.de" not in s._boards
+    assert "linkedin.com" in s._boards
 
 
 # ---------------------------------------------------------- API call (mocked)

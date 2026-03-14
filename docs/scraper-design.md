@@ -49,9 +49,11 @@ User sees results
 ### 2.2 Single-Call Strategy
 
 **`_search_and_extract(query)`** — one API call with `web_search_20250305` tool:
-- Uses `tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]`
-- Prompt instructs Claude to search and return ONLY a JSON array
-- Claude has full search result context when producing structured output (no information loss)
+- Uses `tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 10, "allowed_domains": [...], "user_location": {"type": "approximate", "country": "DE"}}]`
+- Site restrictions are handled via `allowed_domains` on the tool (not in the query string)
+- `user_location` is set to Germany for localized results
+- **System message** contains behavioral/formatting instructions (JSON output format)
+- **User message** is a simple search request — this separation prevents Claude from treating JSON instructions as the primary request and skipping tool invocation
 - Strips accidental markdown fences; falls back to regex `\[.*\]` extraction if direct `json.loads` fails
 - Each extracted item is validated via Pydantic `JobListing(**item)` — invalid items are skipped with a log message
 
@@ -68,19 +70,17 @@ User sees results
 
 ### 3.1 Search Query Construction
 
-Builds a natural language query with site operators:
+Builds a simple natural language query (site restrictions are handled by `allowed_domains` on the tool config):
 
 ```python
 query = f"{keywords} in {location} ({work_type})"
-site_clause = "site:stepstone.de OR site:indeed.de OR ..."
-# JSON instruction is now in the _search_and_extract prompt, not the query
+# Site restrictions moved to allowed_domains in tool config
+# user_location set to DE for German results
 ```
 
 **Example query:**
 ```
-AI Engineer in Berlin Remote (site:stepstone.de OR site:indeed.de OR site:linkedin.com
-OR site:xing.com OR site:monster.de OR site:honeypot.io
-OR site:startup.jobs OR site:arbeitsagentur.de)
+AI Engineer in Berlin Remote
 ```
 
 ### 3.2 Caching Strategy

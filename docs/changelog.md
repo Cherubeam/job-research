@@ -10,7 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File export: search results are saved to `data/results/` with timestamped filenames
 - Download button in Results tab to retrieve saved report files
 
+### Fixed
+- Restructure single-call prompt so Claude invokes `web_search` instead of refusing — separate system message (formatting instructions) from user message (search request)
+
 ### Changed
+- Move site restrictions from query string to `allowed_domains` tool parameter; add `user_location` for German results
 - Convert `JobListing` from dataclass to Pydantic `BaseModel` with runtime validation and salary coercion
 - Merge two-call scraper strategy into single API call — Claude now returns structured JSON while search results are still in context, fixing information loss between calls
 
