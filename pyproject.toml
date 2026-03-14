@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "job-research"
-version = "0.1.0"
+version = "0.3.0"
 description = "AI/ML Job market research tool with Gradio UI for German job boards"
 readme = "README.md"
 requires-python = ">=3.13"

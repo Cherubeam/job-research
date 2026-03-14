@@ -4,102 +4,70 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-03-14
 
 ### Added
 - `JobSpyScraper` — scraper backend using python-jobspy for Indeed + LinkedIn (no API key needed, no Cloudflare blocking).
 - `SCRAPER_BACKEND` env var to switch between `claude` (default) and `jobspy` backends.
 - `JobScraper` protocol in `scraper.py` so both scrapers share a common interface.
-- Title relevance filtering — rejects results that don't match search keywords (e.g. "Shopify Backend Developer" when searching "AI Engineer").
-- Title+company deduplication — collapses identical job postings across locations (e.g. Amazon intern spam).
-- Work type mapping from JobSpy's `is_remote`/`job_type` columns → human-readable display strings.
+- Title relevance filtering — rejects results that don't match search keywords.
+- Title+company deduplication — collapses identical job postings across locations.
+- Work type mapping from JobSpy's `is_remote`/`job_type` columns to human-readable display strings.
 - 1.5x overfetch to compensate for filtering, then truncate to `max_jobs`.
-- Truncation notice in UI status message when results are cut (e.g. "Showing 200 of 250 found listings").
-- `total_found` attribute on `JobSpyScraper` — reflects pre-truncation count after each search.
+- Truncation notice in UI status message when results are cut.
+- `total_found` attribute on `JobSpyScraper` for pre-truncation count.
 - Final site distribution logged after truncation for debugging multi-source balance.
-
-- Configurable site interleaving (`INTERLEAVE_SITES=true` env var + UI checkbox) — round-robin mixes results from Indeed and LinkedIn before truncation so both sources are represented.
-
-### Changed
-- Default `MAX_JOBS_PER_SEARCH` raised from 20 to 200.
+- Configurable site interleaving (`INTERLEAVE_SITES` env var + UI checkbox) — round-robin mixes results from Indeed and LinkedIn before truncation.
 - `scripts/eval_direct_scraper.py` — eval script for JobSpyScraper with optional Claude side-by-side comparison.
 - 42 new tests for JobSpyScraper (relevance filtering, dedup, work type mapping, parameter mapping, caching).
 
 ### Changed
-- System prompt now instructs Claude to extract ALL job listings, not just cherry-pick based on relevance.
+- Default `MAX_JOBS_PER_SEARCH` raised from 20 to 200.
+
+## [0.2.0] — 2026-03-14
 
 ### Added
-- Eval script shows raw response preview and missed-URL report for debugging extraction yield.
-
-### Fixed
-- Indeed adapter false positive: removed `jobs?` from URL pattern — `/jobs?q=...` URLs are search pages, not individual listings.
-- Eval script crash when Claude returns narrative text instead of JSON — now retries with a follow-up extraction request (same pattern as `scraper.py`).
-- System prompt search guidance now gives actionable follow-up strategy: search for `"[company] [title] site:[domain]"` when initial results are search/category pages.
-- Indeed `search_hint` updated with concrete example and valid URL path patterns.
-
-### Added
-- Prompt rule to skip expired/removed job listings (best-effort filter based on page content markers like "abgelaufen", "nicht mehr verfügbar").
+- File export: search results saved to `data/results/` with timestamped filenames.
+- Download button in Results tab to retrieve saved report files.
+- Platform adapters (`boards.py`) with per-board URL patterns for deterministic job listing validation.
+- `scripts/eval_search_quality.py` — standalone eval script measuring URL match rate and field coverage.
+- Prompt rule to skip expired/removed job listings (best-effort filter based on page content markers).
 
 ### Changed
-- System prompt now includes `_max_jobs` count instruction so Claude aims for the configured number of listings (default 20) instead of defaulting to ~10.
-- Strengthened anti-fabrication prompt wording: "MUST be copied verbatim from a web_search result" replaces the weaker "Use the EXACT URL" instruction.
-
-### Added
-- Platform adapters (`boards.py`) with per-board URL patterns for deterministic job listing validation — distinguishes individual job pages from search/category pages.
-- `scripts/eval_search_quality.py` — standalone eval script measuring URL match rate and field coverage, now with adapter-based URL classification.
-
-### Changed
-- System prompt instructs Claude to use multiple searches strategically to find individual job listing pages (not just search/category pages).
-- URL validation uses platform-specific patterns (dual check: URL must be in search results AND match a job URL pattern) instead of exact URL matching only.
-- Default board config: only Indeed.de enabled (others can be re-enabled via UI). Reduces scope for higher-quality results.
-- Prompt no longer requests a specific result count — returns however many real listings are found.
+- Switch default model from `claude-opus-4-6` to `claude-haiku-4-5-20251001` (~60x cheaper, sufficient for web search + JSON extraction).
+- Make `model` parameter required in `ClaudeScraper.__init__` (no more duplicate default).
+- Replace job board list with arbeitsagentur.de; remove jobborse.de, wellfound, remote_rocketship, gruenderszene.de.
+- Wire JobBoardConfig toggles to scraper so env vars actually enable/disable boards.
+- Move site restrictions from query string to `allowed_domains` tool parameter; add `user_location` for German results.
+- Convert `JobListing` from dataclass to Pydantic `BaseModel` with runtime validation and salary coercion.
+- Merge two-call scraper strategy into single API call — Claude returns structured JSON while search results are still in context.
+- System prompt instructs Claude to use multiple searches strategically to find individual job listing pages.
+- URL validation uses platform-specific patterns (dual check: URL in search results AND matches job URL pattern).
+- Default board config: only Indeed.de enabled for higher-quality results.
+- System prompt includes `_max_jobs` count instruction so Claude aims for the configured number of listings.
+- Strengthened anti-fabrication prompt wording: "MUST be copied verbatim from a web_search result".
+- System prompt instructs Claude to extract ALL job listings, not just cherry-pick based on relevance.
 - Salary fields default to null unless explicitly stated in search results.
 
 ### Fixed
-- Indeed domain mismatch: changed `allowed_domains` from `indeed.de` to `de.indeed.com` — individual job pages (`/viewjob`) live on `de.indeed.com`, not `indeed.de`, so searches restricted to `indeed.de` could only return category/search pages.
-- Search results were entirely fabricated — Claude ignored web_search results and generated fake URLs/data. Now cross-references output against actual search result URLs and discards fabricated listings.
-- Zero search results when `web_search` returns Indeed search/category page URLs instead of individual job pages — new validation correctly identifies and skips these.
-
-### Fixed
-- Scraper now retries with a follow-up turn when the model returns narrative text instead of JSON, instead of immediately failing with `RuntimeError`
-- Fix follow-up retry hitting rate limits: disable SDK's internal retry (`max_retries=0`), handle 429s with `retry-after` header (default 60s backoff) instead of 1–4s exponential backoff
+- Indeed domain mismatch: changed `allowed_domains` from `indeed.de` to `de.indeed.com`.
+- Fabricated search results — Claude ignored web_search results and generated fake URLs/data. Now cross-references output against actual search result URLs.
+- Zero search results from Indeed search/category page URLs — validation correctly identifies and skips these.
+- Scraper retries with a follow-up turn when the model returns narrative text instead of JSON.
+- Rate limit handling: disable SDK internal retry, handle 429s with `retry-after` header (default 60s backoff).
+- Indeed adapter false positive: removed `jobs?` from URL pattern — `/jobs?q=...` URLs are search pages, not listings.
+- Restructure single-call prompt so Claude invokes `web_search` instead of refusing.
+- `search_jobs` raises `RuntimeError` with diagnostic message when results are empty.
+- Added INFO-level pipeline logging for developer observability.
+- Empty search results no longer cached, so failed searches don't block retries for 24h.
+- API and scraper errors propagate to the UI instead of being silently swallowed.
+- Configure `logging.basicConfig()` in `app.py` so logger output is visible.
+- `_claude_web_search` raises on empty text responses; `_parse_results` raises on invalid JSON.
+- `app.py` reuses module-level `_config` instead of creating a second `Config()`.
+- Cache key includes work_type, seniority_level, and salary range for correct caching.
 
 ### Removed
-- xing.com from job boards — domain blocks Anthropic's web crawler, incompatible with `allowed_domains`
-
-### Added
-- File export: search results are saved to `data/results/` with timestamped filenames
-- Download button in Results tab to retrieve saved report files
-
-### Fixed
-- Restructure single-call prompt so Claude invokes `web_search` instead of refusing — separate system message (formatting instructions) from user message (search request)
-
-### Changed
-- Move site restrictions from query string to `allowed_domains` tool parameter; add `user_location` for German results
-- Convert `JobListing` from dataclass to Pydantic `BaseModel` with runtime validation and salary coercion
-- Merge two-call scraper strategy into single API call — Claude now returns structured JSON while search results are still in context, fixing information loss between calls
-
-### Fixed
-- `search_jobs` now raises `RuntimeError` with a diagnostic message when results are empty, distinguishing "no items extracted" from "all items filtered" — the UI shows the specific reason instead of a generic message
-- Added INFO-level pipeline logging (web search size, parsed count, dedup count, skipped items) for developer observability
-- Removed dead `if not listings` branch in `app.py` (now handled by exception)
-- Empty search results are no longer cached, so failed searches don't block retries for 24h
-- API and scraper errors now propagate to the UI instead of being silently swallowed
-- Configure `logging.basicConfig()` in `app.py` so logger output is actually visible
-- `_claude_web_search` now raises on empty text responses instead of silently returning `""`
-- `_parse_results` raises on invalid JSON and non-array responses instead of returning `[]`
-- `_listing_from_dict` logs skipped items (missing title) at debug level
-- `app.py` reuses the module-level `_config` instead of creating a second `Config()` with different defaults
-- Empty-result UI message now provides actionable troubleshooting hints
-
-### Changed
-- Switch default model from `claude-opus-4-6` to `claude-haiku-4-5-20251001` (~60x cheaper, sufficient for web search + JSON extraction)
-- Make `model` parameter required in `ClaudeScraper.__init__` (no more duplicate default)
-- Replace job board list with arbeitsagentur.de (Germany's largest job portal); remove jobborse.de, wellfound, remote_rocketship, gruenderszene.de
-- Wire JobBoardConfig toggles to scraper so env vars actually enable/disable boards
-
-### Fixed
-- Cache key now includes work_type, seniority_level, and salary range so different filter combinations no longer return stale cached results
+- xing.com from job boards — domain blocks Anthropic's web crawler.
 
 ## [0.1.0] — 2026-03-13
 
@@ -111,4 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full pytest test suite (35 tests)
 - `docs/` folder with setup, project structure, and scraper design guides
 
+[0.3.0]: https://github.com/Cherubeam/job-research/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/Cherubeam/job-research/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Cherubeam/job-research/releases/tag/v0.1.0
