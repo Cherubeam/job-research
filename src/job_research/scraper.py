@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _JOB_BOARD_MAP: dict[str, str] = {
     "search_stepstone": "stepstone.de",
-    "search_indeed": "indeed.de",
+    "search_indeed": "de.indeed.com",
     "search_linkedin": "linkedin.com",
     "search_monster": "monster.de",
     "search_honeypot": "honeypot.io",

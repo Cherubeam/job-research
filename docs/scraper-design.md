@@ -80,7 +80,7 @@ The system prompt also includes platform-specific guidance so Claude uses follow
 
 ### 2.4 Board Coverage
 
-**Default:** Indeed.de only (largest German job aggregator, no login required). Other boards (StepStone, LinkedIn, Monster, Honeypot, startup.jobs, Arbeitsagentur) can be re-enabled via UI toggles or env vars. Focusing on a single board reduces scope and improves result quality.
+**Default:** `de.indeed.com` only (largest German job aggregator, no login required). Other boards (StepStone, LinkedIn, Monster, Honeypot, startup.jobs, Arbeitsagentur) can be re-enabled via UI toggles or env vars. Focusing on a single board reduces scope and improves result quality.
 
 ### 2.5 Pydantic Validation
 

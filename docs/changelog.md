@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Salary fields default to null unless explicitly stated in search results.
 
 ### Fixed
+- Indeed domain mismatch: changed `allowed_domains` from `indeed.de` to `de.indeed.com` — individual job pages (`/viewjob`) live on `de.indeed.com`, not `indeed.de`, so searches restricted to `indeed.de` could only return category/search pages.
 - Search results were entirely fabricated — Claude ignored web_search results and generated fake URLs/data. Now cross-references output against actual search result URLs and discards fabricated listings.
 - Zero search results when `web_search` returns Indeed search/category page URLs instead of individual job pages — new validation correctly identifies and skips these.
 

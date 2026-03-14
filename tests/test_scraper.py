@@ -149,7 +149,7 @@ def test_build_search_query_excludes_site_clause(scraper, sample_job_search_para
 def test_default_boards_only_indeed(sample_job_search_params):
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")
-    assert s._boards == ["indeed.de"]
+    assert s._boards == ["de.indeed.com"]
 
 
 def test_enabled_board_added_to_boards(sample_job_search_params):
@@ -157,7 +157,7 @@ def test_enabled_board_added_to_boards(sample_job_search_params):
     with patch("job_research.scraper.anthropic.Anthropic"):
         s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config)
     assert "stepstone.de" in s._boards
-    assert "indeed.de" in s._boards
+    assert "de.indeed.com" in s._boards
 
 
 # ---------------------------------------------------------- API call (mocked)
@@ -422,7 +422,7 @@ class TestValidateListingUrls:
             "https://de.indeed.com/viewjob?jk=abc",
             "https://de.indeed.com/viewjob?jk=def",
         }
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
         assert len(result) == 2
 
     def test_discards_search_page_url(self):
@@ -431,7 +431,7 @@ class TestValidateListingUrls:
             JobListing(title="Search Page", job_url="https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"),
         ]
         search_urls = {"https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
         assert len(result) == 0
 
     def test_discards_fabricated_url(self):
@@ -440,7 +440,7 @@ class TestValidateListingUrls:
             JobListing(title="Fake", job_url="https://de.indeed.com/viewjob?jk=fake"),
         ]
         search_urls = {"https://de.indeed.com/viewjob?jk=real"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
         assert len(result) == 0
 
     def test_discards_empty_url(self):
@@ -448,14 +448,14 @@ class TestValidateListingUrls:
             JobListing(title="No URL", job_url=""),
         ]
         search_urls = {"https://de.indeed.com/viewjob?jk=abc"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["indeed.de"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
         assert len(result) == 0
 
     def test_skips_validation_when_no_search_urls(self):
         listings = [
             JobListing(title="Job", job_url="https://example.com/1"),
         ]
-        result = ClaudeScraper._validate_listing_urls(listings, set(), ["indeed.de"])
+        result = ClaudeScraper._validate_listing_urls(listings, set(), ["de.indeed.com"])
         assert len(result) == 1
 
     def test_normalizes_trailing_slash(self):

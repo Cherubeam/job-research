@@ -17,8 +17,8 @@ class JobBoardAdapter:
 
 
 _ADAPTERS: dict[str, JobBoardAdapter] = {
-    "indeed.de": JobBoardAdapter(
-        domain="indeed.de",
+    "de.indeed.com": JobBoardAdapter(
+        domain="de.indeed.com",
         job_url_pattern=re.compile(r"indeed\.\w+/(viewjob|rc/clk|jobs\?)"),
         search_hint=(
             "For Indeed: search pages list many jobs — follow up with searches "

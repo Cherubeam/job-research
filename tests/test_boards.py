@@ -8,7 +8,7 @@ from job_research.boards import get_adapter
 class TestIndeedAdapter:
     @pytest.fixture
     def adapter(self):
-        return get_adapter("indeed.de")
+        return get_adapter("de.indeed.com")
 
     def test_accepts_viewjob_url(self, adapter):
         assert adapter.is_job_listing_url("https://de.indeed.com/viewjob?jk=abc123")
