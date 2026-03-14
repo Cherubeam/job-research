@@ -61,7 +61,6 @@ class JobBoardConfig:
     search_stepstone: bool = True
     search_indeed: bool = True
     search_linkedin: bool = True
-    search_xing: bool = True
     search_monster: bool = True
     search_honeypot: bool = True
     search_startups: bool = True
@@ -111,7 +110,6 @@ class Config:
             search_stepstone=os.getenv("SEARCH_STEPSTONE", "true").lower() == "true",
             search_indeed=os.getenv("SEARCH_INDEED", "true").lower() == "true",
             search_linkedin=os.getenv("SEARCH_LINKEDIN", "true").lower() == "true",
-            search_xing=os.getenv("SEARCH_XING", "true").lower() == "true",
             search_monster=os.getenv("SEARCH_MONSTER", "true").lower() == "true",
             search_honeypot=os.getenv("SEARCH_HONEYPOT", "true").lower() == "true",
             search_startups=os.getenv("SEARCH_STARTUPS", "true").lower() == "true",
@@ -167,7 +165,6 @@ class Config:
                 "search_stepstone": self.job_boards.search_stepstone,
                 "search_indeed": self.job_boards.search_indeed,
                 "search_linkedin": self.job_boards.search_linkedin,
-                "search_xing": self.job_boards.search_xing,
                 "search_monster": self.job_boards.search_monster,
                 "search_honeypot": self.job_boards.search_honeypot,
                 "search_startups": self.job_boards.search_startups,

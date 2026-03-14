@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- xing.com from job boards — domain blocks Anthropic's web crawler, incompatible with `allowed_domains`
+
 ### Added
 - File export: search results are saved to `data/results/` with timestamped filenames
 - Download button in Results tab to retrieve saved report files

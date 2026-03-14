@@ -20,7 +20,6 @@ _JOB_BOARD_MAP: dict[str, str] = {
     "search_stepstone": "stepstone.de",
     "search_indeed": "indeed.de",
     "search_linkedin": "linkedin.com",
-    "search_xing": "xing.com",
     "search_monster": "monster.de",
     "search_honeypot": "honeypot.io",
     "search_startups": "startup.jobs",
