@@ -1,6 +1,7 @@
-![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-orange)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-green.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 # Job Research Tool
 
