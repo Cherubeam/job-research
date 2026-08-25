@@ -1,12 +1,61 @@
 """Configuration management for job research tool"""
 
-from dataclasses import dataclass, field, fields
+import json
+import logging
+import os
+from dataclasses import dataclass, field, fields, is_dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Optional
-from enum import Enum
-import json
+
 from dotenv import load_dotenv
-import os
+
+from job_research.sources import catalog
+
+logger = logging.getLogger(__name__)
+
+
+_LEGACY_SOURCE_VARS = {
+    "SEARCH_STEPSTONE": "stepstone",
+    "SEARCH_INDEED": "indeed",
+    "SEARCH_LINKEDIN": "linkedin",
+    "SEARCH_MONSTER": "monster",
+    "SEARCH_HONEYPOT": "honeypot",
+    "SEARCH_STARTUPS": "startups",
+    "SEARCH_ARBEITSAGENTUR": "arbeitsagentur",
+}
+
+
+def _enabled_sources_from_env() -> list[str]:
+    """Read `ENABLED_SOURCES`, falling back to the legacy `SEARCH_*` booleans.
+
+    The fallback exists so an existing `.env` keeps working rather than silently
+    changing which boards get searched. Unknown ids are dropped with a warning:
+    a typo should cost you one source, not the whole run.
+    """
+    raw = _split_list(os.getenv("ENABLED_SOURCES", ""))
+    if not raw:
+        legacy = [
+            source_id
+            for var, source_id in _LEGACY_SOURCE_VARS.items()
+            if os.getenv(var, "").lower() == "true"
+        ]
+        if legacy:
+            logger.warning(
+                "SEARCH_* variables are deprecated; use ENABLED_SOURCES=%s",
+                ",".join(sorted(legacy)),
+            )
+            return sorted(legacy)
+        return sorted(catalog.DEFAULT_ENABLED)
+
+    known = [source_id for source_id in raw if source_id in catalog.KNOWN_IDS]
+    for source_id in set(raw) - catalog.KNOWN_IDS:
+        logger.warning(
+            "Ignoring unknown source %r in ENABLED_SOURCES. Known: %s",
+            source_id,
+            ", ".join(sorted(catalog.KNOWN_IDS)),
+        )
+    return known or sorted(catalog.DEFAULT_ENABLED)
 
 
 def _split_list(raw: str) -> list[str]:
@@ -71,23 +120,12 @@ class JobSearchParams:
     salary_maximum: int = 200000
     currency: str = "EUR"
     industries: list[str] = field(default_factory=lambda: ["All"])
+    enabled_sources: list[str] = field(default_factory=lambda: sorted(catalog.DEFAULT_ENABLED))
+    """Source ids to search. Ids the active backend cannot reach are skipped."""
     excluded_keywords: list[str] = field(default_factory=list)
     """Titles containing any of these phrases are dropped outright."""
     relevance_threshold: float = 0.6
     """Fraction of a search phrase a title must cover to be kept. See pipeline.relevance."""
-
-
-@dataclass
-class JobBoardConfig:
-    """Configuration for job board searches"""
-
-    search_stepstone: bool = False
-    search_indeed: bool = True
-    search_linkedin: bool = False
-    search_monster: bool = False
-    search_honeypot: bool = False
-    search_startups: bool = False
-    search_arbeitsagentur: bool = False
 
 
 @dataclass
@@ -124,7 +162,6 @@ class Config:
     """Main configuration class"""
 
     search_params: JobSearchParams = field(default_factory=JobSearchParams)
-    job_boards: JobBoardConfig = field(default_factory=JobBoardConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     verbose: bool = False
     scraper_backend: ScraperBackend = ScraperBackend.CLAUDE
@@ -145,18 +182,9 @@ class Config:
             seniority_level=SeniorityLevel(os.getenv("SENIORITY_LEVELS", "All levels")),
             salary_minimum=int(os.getenv("SALARY_MINIMUM", "50000")),
             salary_maximum=int(os.getenv("SALARY_MAXIMUM", "200000")),
+            enabled_sources=_enabled_sources_from_env(),
             excluded_keywords=_split_list(os.getenv("EXCLUDED_KEYWORDS", "")),
             relevance_threshold=float(os.getenv("RELEVANCE_THRESHOLD", "0.6")),
-        )
-
-        job_boards = JobBoardConfig(
-            search_stepstone=os.getenv("SEARCH_STEPSTONE", "false").lower() == "true",
-            search_indeed=os.getenv("SEARCH_INDEED", "true").lower() == "true",
-            search_linkedin=os.getenv("SEARCH_LINKEDIN", "false").lower() == "true",
-            search_monster=os.getenv("SEARCH_MONSTER", "false").lower() == "true",
-            search_honeypot=os.getenv("SEARCH_HONEYPOT", "false").lower() == "true",
-            search_startups=os.getenv("SEARCH_STARTUPS", "false").lower() == "true",
-            search_arbeitsagentur=os.getenv("SEARCH_ARBEITSAGENTUR", "false").lower() == "true",
         )
 
         output = OutputConfig(
@@ -167,7 +195,6 @@ class Config:
 
         return cls(
             search_params=search_params,
-            job_boards=job_boards,
             output=output,
             verbose=os.getenv("VERBOSE", "false").lower() == "true",
             scraper_backend=ScraperBackend(os.getenv("SCRAPER_BACKEND", "claude")),
@@ -202,42 +229,36 @@ class Config:
             data = json.load(f)
 
         search_params = JobSearchParams(**data.get("search_params", {}))
-        job_boards = JobBoardConfig(**data.get("job_boards", {}))
         output = OutputConfig(**data.get("output", {}))
 
         return cls(
             search_params=search_params,
-            job_boards=job_boards,
             output=output,
             verbose=data.get("verbose", False),
         )
 
     def to_dict(self) -> dict:
-        """Convert configuration to dictionary"""
+        """Serialize to plain JSON-compatible types.
+
+        Generated from `fields()` so it cannot drift as fields are added — the
+        hand-written version was already missing `scraper_backend`,
+        `claude_model`, `max_jobs_per_search`, and `interleave_sites`. The API
+        key is excluded: this is written to disk and pasted into issues.
+        """
+
+        def _plain(value: object) -> object:
+            if isinstance(value, Enum):
+                return value.value
+            if isinstance(value, Path):
+                return str(value)
+            if is_dataclass(value) and not isinstance(value, type):
+                return {f.name: _plain(getattr(value, f.name)) for f in fields(value)}
+            if isinstance(value, (list, tuple)):
+                return [_plain(item) for item in value]
+            return value
+
         return {
-            "search_params": {
-                "keywords": self.search_params.keywords,
-                "location": self.search_params.location,
-                "work_type": self.search_params.work_type.value,
-                "seniority_level": self.search_params.seniority_level.value,
-                "salary_minimum": self.search_params.salary_minimum,
-                "salary_maximum": self.search_params.salary_maximum,
-                "industries": self.search_params.industries,
-                "excluded_keywords": self.search_params.excluded_keywords,
-                "relevance_threshold": self.search_params.relevance_threshold,
-            },
-            "job_boards": {
-                "search_stepstone": self.job_boards.search_stepstone,
-                "search_indeed": self.job_boards.search_indeed,
-                "search_linkedin": self.job_boards.search_linkedin,
-                "search_monster": self.job_boards.search_monster,
-                "search_honeypot": self.job_boards.search_honeypot,
-                "search_startups": self.job_boards.search_startups,
-                "search_arbeitsagentur": self.job_boards.search_arbeitsagentur,
-            },
-            "output": {
-                "output_format": self.output.output_format.value,
-                "generate_summary": self.output.generate_summary,
-                "generate_salary_analysis": self.output.generate_salary_analysis,
-            },
+            f.name: _plain(getattr(self, f.name))
+            for f in fields(self)
+            if f.name != "claude_api_key"
         }

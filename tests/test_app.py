@@ -7,6 +7,7 @@ import pytest
 
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams
+from job_research.sources import catalog
 from ui import app
 
 
@@ -259,3 +260,42 @@ def test_irrelevant_titles_are_filtered_out_of_the_report(monkeypatch, isolated_
 
     assert "AI Engineer" in report
     assert "Shopify" not in report
+
+
+# ------------------------------------------------------ source selection (F2)
+
+
+def test_selected_sources_reach_the_scraper(monkeypatch, isolated_output):
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
+    monkeypatch.setattr(app, "_scraper", scraper)
+
+    _run(selected_sources=["indeed"])
+
+    assert scraper.seen_params[0].enabled_sources == ["indeed"]
+
+
+def test_empty_selection_falls_back_to_configured_sources(monkeypatch, isolated_output):
+    """An empty checkbox group must not silently mean "search nothing"."""
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
+    monkeypatch.setattr(app, "_scraper", scraper)
+
+    _run(selected_sources=[])
+
+    assert scraper.seen_params[0].enabled_sources == _config_sources()
+
+
+def _config_sources() -> list[str]:
+    return list(app._config.search_params.enabled_sources)
+
+
+def test_source_choices_only_offer_what_the_backend_can_reach():
+    offered = {source_id for _, source_id in app._source_choices()}
+    reachable = {s.id for s in catalog.for_backend(app._ACTIVE_BACKEND)}
+    assert offered == reachable
+
+
+def test_sources_with_a_caveat_are_flagged_in_their_label():
+    labels = {source_id: label for label, source_id in app._source_choices()}
+    for source in catalog.for_backend(app._ACTIVE_BACKEND):
+        if source.caveat:
+            assert labels[source.id].endswith("⚠")

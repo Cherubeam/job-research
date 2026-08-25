@@ -64,7 +64,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI Engineer", location="Berlin")
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         mock_scrape.assert_called_once()
         call_kwargs = mock_scrape.call_args[1]
@@ -82,7 +82,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI", location="Berlin")
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         assert mock_scrape.call_args[1]["site_name"] == ["linkedin", "indeed"]
 
@@ -93,7 +93,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI", location="Berlin")
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         assert mock_scrape.call_args[1]["results_wanted"] == 30  # int(20 * 1.5)
 
@@ -104,7 +104,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="Python", location="All of Germany")
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         assert mock_scrape.call_args[1]["location"] == "Germany"
 
@@ -115,7 +115,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI", location="Berlin", work_type=WorkType.REMOTE)
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         call_kwargs = mock_scrape.call_args[1]
         assert call_kwargs["is_remote"] is True
@@ -128,7 +128,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI", location="Berlin", work_type=WorkType.ONSITE)
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         assert mock_scrape.call_args[1]["is_remote"] is False
 
@@ -139,7 +139,7 @@ class TestParameterMapping:
         mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI", location="Berlin", work_type=WorkType.ANY)
 
-        scraper._scrape(params)
+        scraper._scrape(params, ["linkedin", "indeed"])
 
         call_kwargs = mock_scrape.call_args[1]
         assert "is_remote" not in call_kwargs
@@ -248,7 +248,7 @@ class TestScrape:
             job_title_alternatives=["Machine Learning Engineer", "Data Scientist", "AI Researcher"],
         )
 
-        listings = scraper._scrape(params)
+        listings = scraper._scrape(params, ["linkedin", "indeed"])
 
         # 5 rows: 1 NaN title → 4 valid, all relevant with the alternatives
         assert len(listings) == 4
@@ -258,7 +258,7 @@ class TestScrape:
         mock_scrape.return_value = pd.DataFrame()
         params = JobSearchParams(keywords="nonexistent", location="Berlin")
 
-        listings = scraper._scrape(params)
+        listings = scraper._scrape(params, ["linkedin", "indeed"])
 
         assert listings == []
 
@@ -270,7 +270,7 @@ class TestScrape:
         params = JobSearchParams(keywords="AI", location="Berlin")
 
         with pytest.raises(RuntimeError, match="JobSpy scraping failed"):
-            scraper._scrape(params)
+            scraper._scrape(params, ["linkedin", "indeed"])
 
 
 class TestSearchJobsCache:

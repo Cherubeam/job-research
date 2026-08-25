@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Optional, Protocol
 from urllib.parse import urlparse, urlunparse
 
@@ -12,8 +13,8 @@ import anthropic
 from pydantic import ValidationError
 
 from job_research.analyzer import JobListing
-from job_research.boards import get_adapter
-from job_research.config import JobBoardConfig, JobSearchParams
+from job_research.config import JobSearchParams
+from job_research.sources import Backend, Source, catalog
 from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
@@ -30,41 +31,14 @@ class JobScraper(Protocol):
     ) -> list[JobListing]: ...
 
 
-_JOB_BOARD_MAP: dict[str, str] = {
-    "search_stepstone": "stepstone.de",
-    "search_indeed": "de.indeed.com",
-    "search_linkedin": "linkedin.com",
-    "search_monster": "monster.de",
-    "search_honeypot": "honeypot.io",
-    "search_startups": "startup.jobs",
-    "search_arbeitsagentur": "arbeitsagentur.de",
-}
-
-
-def get_active_boards(board_config: JobBoardConfig) -> list[str]:
-    """Return domain list for boards that are enabled in *board_config*."""
-    return [
-        domain
-        for field_name, domain in _JOB_BOARD_MAP.items()
-        if getattr(board_config, field_name, False)
-    ]
-
-
 class ClaudeScraper:
     """Searches for job listings using the Claude API with the web_search_20250305 tool."""
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str,
-        max_jobs: int = 20,
-        board_config: Optional[JobBoardConfig] = None,
-    ) -> None:
+    def __init__(self, api_key: str, model: str, max_jobs: int = 20) -> None:
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=0)
         self._model = model
         self._max_jobs = max_jobs
         self._last_call_time: float = 0.0
-        self._boards = get_active_boards(board_config or JobBoardConfig())
 
     # ------------------------------------------------------------------ public
 
@@ -79,12 +53,19 @@ class ClaudeScraper:
         Returns every listing found. Salary/seniority filtering, interleaving,
         and truncation happen downstream in `pipeline.apply`.
         """
+        sources = catalog.resolve(params.enabled_sources, Backend.CLAUDE)
+        if not sources:
+            raise RuntimeError(
+                "No sources selected that the Claude backend can search. "
+                f"Available: {', '.join(s.id for s in catalog.for_backend(Backend.CLAUDE))}"
+            )
+
         cache_key = create_cache_key(
             "claude_web_search",
             keywords=params.keywords,
             location=params.location,
             work_type=params.work_type.value,
-            boards=tuple(self._boards),
+            sources=tuple(s.id for s in sources),
             max_jobs=self._max_jobs,
         )
         cached = load_cache(cache_dir, cache_key)
@@ -93,7 +74,7 @@ class ClaudeScraper:
             return [JobListing(**item) for item in cached]
 
         query = self._build_search_query(params)
-        listings, total_items = self._search_and_extract(query)
+        listings, total_items = self._search_and_extract(query, sources)
         logger.info("Extracted %d listings from %d items", len(listings), total_items)
 
         if not listings:
@@ -221,7 +202,7 @@ class ClaudeScraper:
     def _validate_listing_urls(
         listings: list[JobListing],
         search_urls: set[str],
-        boards: list[str],
+        sources: "Sequence[Source]",
     ) -> list[JobListing]:
         """Keep only listings whose URL is in search results AND matches a job URL pattern."""
         if not search_urls:
@@ -229,7 +210,6 @@ class ClaudeScraper:
             return listings
 
         normalized_search = {ClaudeScraper._normalize_url(u) for u in search_urls}
-        adapters = [get_adapter(d) for d in boards]
 
         kept = []
         for listing in listings:
@@ -237,7 +217,7 @@ class ClaudeScraper:
                 continue
             norm_url = ClaudeScraper._normalize_url(listing.job_url)
             in_search = norm_url in normalized_search
-            matches_pattern = any(a.is_job_listing_url(listing.job_url) for a in adapters)
+            matches_pattern = any(s.is_job_listing_url(listing.job_url) for s in sources)
 
             if in_search and matches_pattern:
                 kept.append(listing)
@@ -250,9 +230,9 @@ class ClaudeScraper:
         logger.info("Validated %d/%d listings (%d discarded)", len(kept), len(listings), discarded)
         return kept
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, sources: "Sequence[Source]") -> str:
         """Build the system prompt with platform-specific search guidance."""
-        platform_hints = "\n".join(f"- {get_adapter(d).search_hint}" for d in self._boards)
+        platform_hints = "\n".join(f"- {s.search_hint}" for s in sources if s.search_hint)
         return (
             "You are a job search assistant. Search German job boards using the "
             "web_search tool. You have up to 10 searches — use them strategically:\n\n"
@@ -278,21 +258,23 @@ class ClaudeScraper:
             "- Never invent job listings. Only extract jobs explicitly mentioned in search results."
         )
 
-    def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
+    def _search_and_extract(
+        self, query: str, sources: "Sequence[Source]"
+    ) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
         tools = [
             {
                 "type": "web_search_20250305",
                 "name": "web_search",
                 "max_uses": 10,
-                "allowed_domains": self._boards,
+                "allowed_domains": [s.domain for s in sources],
                 "user_location": {
                     "type": "approximate",
                     "country": "DE",
                 },
             }
         ]
-        system = self._build_system_prompt()
+        system = self._build_system_prompt(sources)
         user_message = f"Search for {query} job listings and extract what you find"
         messages = [{"role": "user", "content": user_message}]
         response = self._make_api_call(messages, tools=tools, system=system)
@@ -347,6 +329,6 @@ class ClaudeScraper:
         if skipped:
             logger.info("Skipped %d/%d items (validation failed)", skipped, len(data))
 
-        listings = self._validate_listing_urls(listings, search_urls, self._boards)
+        listings = self._validate_listing_urls(listings, search_urls, sources)
 
         return listings, len(data)

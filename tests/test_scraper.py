@@ -7,7 +7,8 @@ from pydantic import ValidationError
 from unittest.mock import MagicMock, patch
 
 from job_research.analyzer import JobListing
-from job_research.config import JobBoardConfig
+from job_research.config import JobSearchParams
+from job_research.sources import Backend, catalog
 from job_research.scraper import ClaudeScraper
 
 
@@ -34,6 +35,9 @@ def _make_text_response(text: str, search_urls: list[str] | None = None) -> Magi
     response = MagicMock()
     response.content = blocks
     return response
+
+
+INDEED = (catalog.get("indeed"),)
 
 
 @pytest.fixture
@@ -131,35 +135,37 @@ def test_build_search_query_excludes_site_clause(scraper, sample_job_search_para
 
 
 def test_build_system_prompt_contains_max_jobs(scraper):
-    prompt = scraper._build_system_prompt()
+    prompt = scraper._build_system_prompt(INDEED)
     assert "up to 10)" in prompt
 
 
 def test_build_system_prompt_contains_anti_fabrication_rule(scraper):
-    prompt = scraper._build_system_prompt()
+    prompt = scraper._build_system_prompt(INDEED)
     assert "copied verbatim from a web_search result" in prompt
 
 
 def test_build_system_prompt_contains_expired_listing_rule(scraper):
-    prompt = scraper._build_system_prompt()
+    prompt = scraper._build_system_prompt(INDEED)
     assert "expired" in prompt
     assert "abgelaufen" in prompt
 
 
-def test_default_boards_only_indeed(sample_job_search_params):
-    with patch("job_research.scraper.anthropic.Anthropic"):
-        s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001")
-    assert s._boards == ["de.indeed.com"]
+def test_default_selection_resolves_to_the_registry_defaults():
+    sources = catalog.resolve(JobSearchParams().enabled_sources, Backend.CLAUDE)
+    assert {s.id for s in sources} == {"indeed", "linkedin"}
 
 
-def test_enabled_board_added_to_boards(sample_job_search_params):
-    board_config = JobBoardConfig(search_stepstone=True)
-    with patch("job_research.scraper.anthropic.Anthropic"):
-        s = ClaudeScraper(
-            api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config
-        )
-    assert "stepstone.de" in s._boards
-    assert "de.indeed.com" in s._boards
+def test_explicit_selection_is_honoured():
+    params = JobSearchParams(enabled_sources=["stepstone", "indeed"])
+    sources = catalog.resolve(params.enabled_sources, Backend.CLAUDE)
+    assert {s.id for s in sources} == {"stepstone", "indeed"}
+
+
+def test_search_jobs_rejects_a_selection_this_backend_cannot_reach(scraper, tmp_cache_dir):
+    """Selecting nothing reachable must fail loudly, not silently search nothing."""
+    params = JobSearchParams(enabled_sources=[])
+    with pytest.raises(RuntimeError, match="No sources selected"):
+        scraper.search_jobs(params, tmp_cache_dir)
 
 
 # ---------------------------------------------------------- API call (mocked)
@@ -267,7 +273,7 @@ class TestSearchAndExtract:
             search_urls=["https://de.indeed.com/viewjob?jk=abc123"],
         )
         with patch("job_research.scraper.time.sleep"):
-            listings, total = scraper._search_and_extract("test query")
+            listings, total = scraper._search_and_extract("test query", INDEED)
         assert len(listings) == 1
         assert total == 1
         assert listings[0].title == "AI Engineer"
@@ -293,7 +299,7 @@ class TestSearchAndExtract:
             search_urls=["https://de.indeed.com/viewjob?jk=real123"],
         )
         with patch("job_research.scraper.time.sleep"):
-            listings, total = scraper._search_and_extract("test query")
+            listings, total = scraper._search_and_extract("test query", INDEED)
         assert len(listings) == 1
         assert listings[0].title == "Real Job"
         assert total == 2
@@ -306,13 +312,13 @@ class TestSearchAndExtract:
         scraper._client.messages.create.return_value = response
         with patch("job_research.scraper.time.sleep"):
             with pytest.raises(RuntimeError, match="no text content"):
-                scraper._search_and_extract("test query")
+                scraper._search_and_extract("test query", INDEED)
 
     def test_raises_on_empty_text(self, scraper):
         scraper._client.messages.create.return_value = _make_text_response("   ")
         with patch("job_research.scraper.time.sleep"):
             with pytest.raises(RuntimeError, match="no text content"):
-                scraper._search_and_extract("test query")
+                scraper._search_and_extract("test query", INDEED)
 
     def test_raises_on_invalid_json_after_retry(self, scraper):
         """Both initial response and follow-up retry return non-JSON text."""
@@ -322,7 +328,7 @@ class TestSearchAndExtract:
         ]
         with patch("job_research.scraper.time.sleep"):
             with pytest.raises(RuntimeError, match="Failed to parse job listings after retry"):
-                scraper._search_and_extract("test query")
+                scraper._search_and_extract("test query", INDEED)
 
     def test_raises_on_non_array(self, scraper):
         scraper._client.messages.create.side_effect = [
@@ -331,7 +337,7 @@ class TestSearchAndExtract:
         ]
         with patch("job_research.scraper.time.sleep"):
             with pytest.raises(RuntimeError, match="Failed to parse job listings after retry"):
-                scraper._search_and_extract("test query")
+                scraper._search_and_extract("test query", INDEED)
 
     def test_strips_markdown_fences(self, scraper):
         jobs = [
@@ -348,7 +354,7 @@ class TestSearchAndExtract:
             search_urls=["https://de.indeed.com/viewjob?jk=fence1"],
         )
         with patch("job_research.scraper.time.sleep"):
-            listings, total = scraper._search_and_extract("test query")
+            listings, total = scraper._search_and_extract("test query", INDEED)
         assert len(listings) == 1
         assert listings[0].title == "ML Eng"
 
@@ -367,7 +373,7 @@ class TestSearchAndExtract:
             search_urls=["https://de.indeed.com/viewjob?jk=valid"],
         )
         with patch("job_research.scraper.time.sleep"):
-            listings, total = scraper._search_and_extract("test query")
+            listings, total = scraper._search_and_extract("test query", INDEED)
         assert len(listings) == 1
         assert total == 3
         assert listings[0].title == "Valid Job"
@@ -390,7 +396,7 @@ class TestSearchAndExtract:
             _make_text_response(json.dumps(jobs)),
         ]
         with patch("job_research.scraper.time.sleep"):
-            listings, total = scraper._search_and_extract("test query")
+            listings, total = scraper._search_and_extract("test query", INDEED)
         assert len(listings) == 1
         assert listings[0].title == "AI Eng"
         assert scraper._client.messages.create.call_count == 2
@@ -403,7 +409,7 @@ class TestSearchAndExtract:
         ]
         with patch("job_research.scraper.time.sleep"):
             with pytest.raises(RuntimeError, match="Failed to parse job listings after retry"):
-                scraper._search_and_extract("test query")
+                scraper._search_and_extract("test query", INDEED)
 
     def test_extracts_json_from_prose(self, scraper):
         jobs = [
@@ -420,7 +426,7 @@ class TestSearchAndExtract:
             search_urls=["https://de.indeed.com/viewjob?jk=prose1"],
         )
         with patch("job_research.scraper.time.sleep"):
-            listings, total = scraper._search_and_extract("test query")
+            listings, total = scraper._search_and_extract("test query", INDEED)
         assert len(listings) == 1
         assert listings[0].title == "Data Eng"
 
@@ -459,7 +465,7 @@ class TestValidateListingUrls:
             "https://de.indeed.com/viewjob?jk=abc",
             "https://de.indeed.com/viewjob?jk=def",
         }
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, INDEED)
         assert len(result) == 2
 
     def test_discards_search_page_url(self):
@@ -470,7 +476,7 @@ class TestValidateListingUrls:
             ),
         ]
         search_urls = {"https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, INDEED)
         assert len(result) == 0
 
     def test_discards_fabricated_url(self):
@@ -479,7 +485,7 @@ class TestValidateListingUrls:
             JobListing(title="Fake", job_url="https://de.indeed.com/viewjob?jk=fake"),
         ]
         search_urls = {"https://de.indeed.com/viewjob?jk=real"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, INDEED)
         assert len(result) == 0
 
     def test_discards_empty_url(self):
@@ -487,14 +493,14 @@ class TestValidateListingUrls:
             JobListing(title="No URL", job_url=""),
         ]
         search_urls = {"https://de.indeed.com/viewjob?jk=abc"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
+        result = ClaudeScraper._validate_listing_urls(listings, search_urls, INDEED)
         assert len(result) == 0
 
     def test_skips_validation_when_no_search_urls(self):
         listings = [
             JobListing(title="Job", job_url="https://example.com/1"),
         ]
-        result = ClaudeScraper._validate_listing_urls(listings, set(), ["de.indeed.com"])
+        result = ClaudeScraper._validate_listing_urls(listings, set(), INDEED)
         assert len(result) == 1
 
     def test_normalizes_trailing_slash(self):
@@ -502,7 +508,9 @@ class TestValidateListingUrls:
             JobListing(title="Job", job_url="https://www.stepstone.de/jobs/12345/"),
         ]
         search_urls = {"https://www.stepstone.de/jobs/12345"}
-        result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["stepstone.de"])
+        result = ClaudeScraper._validate_listing_urls(
+            listings, search_urls, (catalog.get("stepstone"),)
+        )
         assert len(result) == 1
 
 

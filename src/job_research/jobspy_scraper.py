@@ -11,13 +11,10 @@ from pydantic import ValidationError
 
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams, WorkType
+from job_research.sources import Backend, catalog
 from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
-
-# Boards python-jobspy reaches for this project. Phase 3 derives this from the
-# source registry instead of hardcoding it (see F2 in the architecture review).
-_SITES = ("linkedin", "indeed")
 
 _JOB_TYPE_MAP = {
     "fulltime": "Full-time",
@@ -51,12 +48,14 @@ class JobSpyScraper:
         interleaving, and truncation happen downstream in `pipeline.apply`, so
         the cache stays valid while those are adjusted.
         """
+        sites = self._sites_for(params)
+
         cache_key = create_cache_key(
             "jobspy",
             keywords=params.keywords,
             location=params.location,
             work_type=params.work_type.value,
-            sites=tuple(_SITES),
+            sites=tuple(sites),
             results_wanted=self._results_wanted,
         )
         cached = load_cache(cache_dir, cache_key)
@@ -64,7 +63,7 @@ class JobSpyScraper:
             logger.info("Cache hit for key %s (%d listings)", cache_key, len(cached))
             return [JobListing(**item) for item in cached]
 
-        listings = self._scrape(params)
+        listings = self._scrape(params, sites)
 
         if not listings:
             raise RuntimeError(
@@ -84,7 +83,23 @@ class JobSpyScraper:
         logger.info("Found %d listings (saved to cache)", len(listings))
         return listings
 
-    def _scrape(self, params: JobSearchParams) -> list[JobListing]:
+    @staticmethod
+    def _sites_for(params: JobSearchParams) -> list[str]:
+        """Map the selected sources to python-jobspy site names.
+
+        Sources jobspy cannot reach (StepStone, Honeypot, ...) are simply absent
+        from the result — `catalog.resolve` filters by backend.
+        """
+        sources = catalog.resolve(params.enabled_sources, Backend.JOBSPY)
+        sites = [s.jobspy_site for s in sources if s.jobspy_site]
+        if not sites:
+            available = ", ".join(s.id for s in catalog.for_backend(Backend.JOBSPY))
+            raise RuntimeError(
+                "No sources selected that the jobspy backend can search. " f"Available: {available}"
+            )
+        return sites
+
+    def _scrape(self, params: JobSearchParams, sites: list[str]) -> list[JobListing]:
         """Call jobspy and convert results to JobListing objects."""
         location = params.location if params.location != "All of Germany" else "Germany"
         job_type, is_remote = self._map_work_type(params)
@@ -92,7 +107,7 @@ class JobSpyScraper:
         search_term = f'"{params.keywords}"'
 
         kwargs: dict = {
-            "site_name": list(_SITES),
+            "site_name": list(sites),
             "search_term": search_term,
             "location": location,
             "country_indeed": self._country,

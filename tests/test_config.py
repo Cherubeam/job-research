@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from job_research.config import Config, JobSearchParams, WorkType
+from job_research.sources import catalog
 
 
 def test_config_default_construction():
@@ -40,11 +41,9 @@ def test_config_from_env(monkeypatch):
     assert config.verbose is True
 
 
-def test_config_from_env_defaults_only_indeed(monkeypatch):
-    """Without SEARCH_* env vars, only Indeed should be enabled."""
-    # Prevent .env file from injecting values
+def _clear_source_env(monkeypatch):
     monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
-    # Clear any SEARCH_* vars that might be set
+    monkeypatch.delenv("ENABLED_SOURCES", raising=False)
     for board in [
         "STEPSTONE",
         "INDEED",
@@ -57,15 +56,50 @@ def test_config_from_env_defaults_only_indeed(monkeypatch):
         monkeypatch.delenv(f"SEARCH_{board}", raising=False)
     monkeypatch.delenv("SCRAPER_BACKEND", raising=False)
 
-    config = Config.from_env()
 
-    assert config.job_boards.search_indeed is True
-    assert config.job_boards.search_stepstone is False
-    assert config.job_boards.search_linkedin is False
-    assert config.job_boards.search_monster is False
-    assert config.job_boards.search_honeypot is False
-    assert config.job_boards.search_startups is False
-    assert config.job_boards.search_arbeitsagentur is False
+def test_enabled_sources_default_to_the_registry(monkeypatch):
+    _clear_source_env(monkeypatch)
+    config = Config.from_env()
+    assert set(config.search_params.enabled_sources) == set(catalog.DEFAULT_ENABLED)
+
+
+def test_enabled_sources_read_from_env(monkeypatch):
+    _clear_source_env(monkeypatch)
+    monkeypatch.setenv("ENABLED_SOURCES", "stepstone, indeed")
+    config = Config.from_env()
+    assert config.search_params.enabled_sources == ["stepstone", "indeed"]
+
+
+def test_unknown_source_ids_are_dropped_not_fatal(monkeypatch):
+    """A typo should cost you one source, not the whole run."""
+    _clear_source_env(monkeypatch)
+    monkeypatch.setenv("ENABLED_SOURCES", "indeed, stepstoen")
+    config = Config.from_env()
+    assert config.search_params.enabled_sources == ["indeed"]
+
+
+def test_all_unknown_source_ids_fall_back_to_defaults(monkeypatch):
+    _clear_source_env(monkeypatch)
+    monkeypatch.setenv("ENABLED_SOURCES", "nope, alsonope")
+    config = Config.from_env()
+    assert set(config.search_params.enabled_sources) == set(catalog.DEFAULT_ENABLED)
+
+
+def test_legacy_search_vars_still_work(monkeypatch):
+    """An existing .env must not silently change which boards get searched."""
+    _clear_source_env(monkeypatch)
+    monkeypatch.setenv("SEARCH_STEPSTONE", "true")
+    monkeypatch.setenv("SEARCH_INDEED", "true")
+    config = Config.from_env()
+    assert config.search_params.enabled_sources == ["indeed", "stepstone"]
+
+
+def test_enabled_sources_takes_precedence_over_legacy_vars(monkeypatch):
+    _clear_source_env(monkeypatch)
+    monkeypatch.setenv("SEARCH_STEPSTONE", "true")
+    monkeypatch.setenv("ENABLED_SOURCES", "linkedin")
+    config = Config.from_env()
+    assert config.search_params.enabled_sources == ["linkedin"]
 
 
 def test_config_from_json(tmp_path: Path):
@@ -92,10 +126,30 @@ def test_config_to_dict():
     d = config.to_dict()
 
     assert "search_params" in d
-    assert "job_boards" in d
     assert "output" in d
-    assert "keywords" in d["search_params"]
-    assert "output_format" in d["output"]
+    assert d["search_params"]["keywords"] == "AI Engineer"
+    assert d["output"]["output_format"] == "markdown"
+    assert set(d["search_params"]["enabled_sources"]) == set(catalog.DEFAULT_ENABLED)
+
+
+def test_config_to_dict_covers_every_field_except_the_secret():
+    """Generated from fields(), so a new field cannot go missing the way four did."""
+    from dataclasses import fields
+
+    d = Config().to_dict()
+    expected = {f.name for f in fields(Config)} - {"claude_api_key"}
+    assert set(d) == expected
+
+
+def test_config_to_dict_excludes_the_api_key():
+    d = Config(claude_api_key="sk-ant-secret").to_dict()
+    assert "claude_api_key" not in d
+    assert "sk-ant-secret" not in json.dumps(d)
+
+
+def test_config_to_dict_is_json_serializable():
+    """It gets written to disk, so Paths and Enums must already be plain."""
+    json.dumps(Config().to_dict())
 
 
 # ------------------------------------------------------- secret masking

@@ -11,6 +11,7 @@ import gradio as gr
 
 from job_research import pipeline
 from job_research.config import Config, ScraperBackend, SeniorityLevel, WorkType
+from job_research.sources import Backend, catalog
 from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
 from job_research.scraper import ClaudeScraper, JobScraper
@@ -32,11 +33,36 @@ try:
             api_key=_config.claude_api_key,
             model=_config.claude_model,
             max_jobs=_config.max_jobs_per_search,
-            board_config=_config.job_boards,
         )
         logger.info("Using ClaudeScraper")
 except Exception:
     logger.exception("Failed to initialize scraper")
+
+
+_ACTIVE_BACKEND = (
+    Backend.JOBSPY if _config.scraper_backend == ScraperBackend.JOBSPY else Backend.CLAUDE
+)
+
+
+def _source_choices() -> list[tuple[str, str]]:
+    """Selectable sources for the active backend, as (label, id) pairs.
+
+    Only sources this backend can actually reach are offered — showing
+    StepStone while running jobspy would be the same lie F2 was about.
+    """
+    choices = []
+    for source in catalog.for_backend(_ACTIVE_BACKEND):
+        label = f"{source.label} ⚠" if source.caveat else source.label
+        choices.append((label, source.id))
+    return choices
+
+
+def _source_caveats() -> str:
+    """Markdown footnotes for sources that carry a caveat."""
+    lines = [
+        f"- **{s.label}** — {s.caveat}" for s in catalog.for_backend(_ACTIVE_BACKEND) if s.caveat
+    ]
+    return "\n".join(lines)
 
 
 def run_job_research(
@@ -49,6 +75,7 @@ def run_job_research(
     output_format: str,
     interleave_sites: bool = True,
     excluded_keywords: str = "",
+    selected_sources: list[str] | None = None,
 ) -> Generator[tuple[str, str, str, str | None], None, None]:
     """Run job research with given parameters. Yields (status_md, log_text, report_md, filepath)."""
     if not keywords.strip():
@@ -89,6 +116,11 @@ def run_job_research(
         salary_minimum=salary_min,
         salary_maximum=salary_max,
         excluded_keywords=[k.strip() for k in excluded_keywords.split(",") if k.strip()],
+        enabled_sources=(
+            list(selected_sources)
+            if selected_sources
+            else list(_config.search_params.enabled_sources)
+        ),
     )
 
     # Run search in background thread
@@ -251,12 +283,26 @@ def create_ui() -> gr.Blocks:
                         value="markdown",
                     )
 
+                    source_input = gr.CheckboxGroup(
+                        label="Job Sources",
+                        choices=_source_choices(),
+                        value=[
+                            s
+                            for s in _config.search_params.enabled_sources
+                            if s in {sid for _, sid in _source_choices()}
+                        ],
+                        info=f"Sources reachable by the {_ACTIVE_BACKEND.value} backend.",
+                    )
+
                     exclude_input = gr.Textbox(
                         label="Exclude titles containing",
                         placeholder="e.g. Werkstudent, Praktikum, Sales",
                         info="Comma-separated. Matched on whole words.",
                         value=", ".join(_config.search_params.excluded_keywords),
                     )
+
+                if _source_caveats():
+                    gr.Markdown(_source_caveats())
 
                 with gr.Row():
                     interleave_sites = gr.Checkbox(
@@ -342,6 +388,7 @@ def create_ui() -> gr.Blocks:
                 output_format,
                 interleave_sites,
                 exclude_input,
+                source_input,
             ],
             outputs=[status_output, log_output, results_output, download_file],
         )
