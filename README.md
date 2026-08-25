@@ -1,3 +1,4 @@
+[![CI](https://github.com/Cherubeam/job-research/actions/workflows/ci.yml/badge.svg)](https://github.com/Cherubeam/job-research/actions/workflows/ci.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 ![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-green.svg)
@@ -155,10 +156,24 @@ job-research/
 uv run pytest tests/ -v
 
 # Code quality
-uv run black src/
+uv run black src/ tests/
 uv run ruff check src/ tests/
 uv run mypy src/
 ```
+
+All four gates run in CI on every push and pull request
+([.github/workflows/ci.yml](.github/workflows/ci.yml)); they must pass before a
+branch merges. To keep `git blame` readable across the bulk reformatting commit:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+`tests/test_characterization.py` pins current behaviour — including behaviour
+already identified as wrong in the
+[architecture review](docs/architecture-review.md). A failing
+`test_characterizes_*` test usually means a planned fix landed; update the test
+to assert the new behaviour rather than working around it.
 
 ## Docs
 

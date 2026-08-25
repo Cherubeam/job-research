@@ -7,15 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- GitHub Actions CI (`.github/workflows/ci.yml`) — ruff, black, mypy, and pytest on every push and pull request.
+- `tests/test_characterization.py` — 23 tests pinning current behaviour ahead of the planned refactors, including known-wrong behaviour marked `test_characterizes_*`.
+- `.git-blame-ignore-revs` so the bulk black reformatting commit does not obscure `git blame`.
+- `pandas-stubs` dev dependency.
 - `docs/architecture-review.md` — architecture review with findings (F1–F13) and a phased refactor plan.
 - `docs/decisions/` — ADR folder; ADR-001 records the Bundesagentur für Arbeit access posture (opt-in, off by default).
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- Version is single-sourced from package metadata via `importlib.metadata`; `__init__.py` no longer hardcodes it (was stale at 0.1.0).
+- Whole codebase formatted with black so the CI format gate is enforceable.
+- Analyzer tests assert exact values instead of `is not None` / `min <= max`.
 - **Single-page UI**: Removed Results tab — search results now render inline on the Search page as formatted Markdown (no more `max_lines` truncation).
 - **Live progress**: Status line updates during search; expandable "Search Log" accordion shows full scraper log history.
 - `run_job_research()` is now a generator that streams status/log/result updates to the UI via a background thread.
 - CSV output wrapped in a code fence for proper Markdown display.
+
+### Fixed
+- `_safe_int` in `jobspy_scraper.py` now narrows on `SupportsFloat`; narrowing on `(int, float)` would have dropped every salary from an all-integer pandas column, since `numpy.int64` subclasses neither.
+- All 8 mypy errors resolved; `uv run mypy src/` is clean.
 
 ## [0.3.0] — 2026-03-14
 

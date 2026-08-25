@@ -92,6 +92,9 @@ refactor: extract query builder to separate method
 
 Run `uv run ruff check src/ tests/` before committing to catch issues early.
 
+CI enforces four gates on every push and PR: `ruff check`, `black --check`,
+`mypy src/`, and `pytest`. All four must pass before merging.
+
 When implementing changes, commit each logical step as you go with a single-sentence commit message.
 
 ### Finishing a feature branch
