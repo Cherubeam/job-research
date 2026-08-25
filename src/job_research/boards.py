@@ -23,7 +23,7 @@ _ADAPTERS: dict[str, JobBoardAdapter] = {
         search_hint=(
             "For Indeed: initial searches often return search/category pages. "
             "To find individual job listings, search for the company name + exact "
-            "job title + \"indeed\" (e.g. \"Siemens AI Engineer indeed\"). "
+            'job title + "indeed" (e.g. "Siemens AI Engineer indeed"). '
             "Valid job URLs contain /viewjob or /rc/clk in the path."
         ),
     ),
@@ -37,9 +37,7 @@ _ADAPTERS: dict[str, JobBoardAdapter] = {
     "linkedin.com": JobBoardAdapter(
         domain="linkedin.com",
         job_url_pattern=re.compile(r"linkedin\.com/jobs/view/\d"),
-        search_hint=(
-            "For LinkedIn: individual job URLs contain /jobs/view/<id>."
-        ),
+        search_hint=("For LinkedIn: individual job URLs contain /jobs/view/<id>."),
     ),
     "monster.de": JobBoardAdapter(
         domain="monster.de",

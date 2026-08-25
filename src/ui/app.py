@@ -176,11 +176,13 @@ def create_ui() -> gr.Blocks:
 
     demo: gr.Blocks
     with gr.Blocks(title="Job Research Tool", theme=gr.themes.Soft()) as demo:
-        gr.Markdown("""
+        gr.Markdown(
+            """
         # Job Market Research Tool
 
         Search for AI/ML jobs across German job boards with customizable filters.
-        """)
+        """
+        )
 
         with gr.Tabs():
             with gr.Tab("Search"):
@@ -253,7 +255,8 @@ def create_ui() -> gr.Blocks:
                 download_file = gr.File(label="Download Results")
 
             with gr.Tab("Info"):
-                gr.Markdown("""
+                gr.Markdown(
+                    """
                 ## About This Tool
 
                 This tool searches for AI/ML jobs across major German job boards using the
@@ -285,11 +288,21 @@ def create_ui() -> gr.Blocks:
                 2. Filter by location and work type to narrow down results
                 3. Export results to CSV for further analysis in Excel/Sheets
                 4. Repeated searches with the same parameters use cached results
-                """)
+                """
+                )
 
         search_btn.click(
             fn=run_job_research,
-            inputs=[keywords, location, work_type, seniority, salary_min, salary_max, output_format, interleave_sites],
+            inputs=[
+                keywords,
+                location,
+                work_type,
+                seniority,
+                salary_min,
+                salary_max,
+                output_format,
+                interleave_sites,
+            ],
             outputs=[status_output, log_output, results_output, download_file],
         )
 

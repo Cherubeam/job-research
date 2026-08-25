@@ -109,7 +109,9 @@ class ClaudeScraper:
                 "(e.g. job title). The search results may not contain structured job listings."
             )
 
-        save_cache(cache_dir, cache_key, [lst.model_dump() for lst in listings], cache_duration_hours)
+        save_cache(
+            cache_dir, cache_key, [lst.model_dump() for lst in listings], cache_duration_hours
+        )
         logger.info("Found %d listings (saved to cache)", len(listings))
         return listings
 
@@ -164,14 +166,17 @@ class ClaudeScraper:
                 retry_after = self._get_retry_after(exc)
                 logger.warning(
                     "Rate limited (attempt %d) — retrying in %ds",
-                    attempt + 1, retry_after,
+                    attempt + 1,
+                    retry_after,
                 )
                 time.sleep(retry_after)
             except anthropic.APIStatusError as exc:
                 if attempt == 2:
                     raise
                 wait = 2**attempt
-                logger.warning("API error (attempt %d): %s — retrying in %ds", attempt + 1, exc, wait)
+                logger.warning(
+                    "API error (attempt %d): %s — retrying in %ds", attempt + 1, exc, wait
+                )
                 time.sleep(wait)
         raise RuntimeError("unreachable")
 
@@ -249,16 +254,14 @@ class ClaudeScraper:
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt with platform-specific search guidance."""
-        platform_hints = "\n".join(
-            f"- {get_adapter(d).search_hint}" for d in self._boards
-        )
+        platform_hints = "\n".join(f"- {get_adapter(d).search_hint}" for d in self._boards)
         return (
             "You are a job search assistant. Search German job boards using the "
             "web_search tool. You have up to 10 searches — use them strategically:\n\n"
             "1. Start with a broad search to find relevant pages.\n"
             "2. If results are search/category pages, do follow-up searches to find "
             "individual job listing pages. For each promising job, search for:\n"
-            "   \"[company name] [job title] site:[job board domain]\"\n"
+            '   "[company name] [job title] site:[job board domain]"\n'
             "3. Extract job listings ONLY from actual search results — never invent.\n\n"
             f"Extract ALL job listings you find (up to {self._max_jobs}). Include every\n"
             "job whose URL points to an individual listing page — do not cherry-pick\n"
@@ -272,23 +275,25 @@ class ClaudeScraper:
             "- job_url MUST be copied verbatim from a web_search result — never construct or guess a URL.\n"
             "- Only include job listings whose URL points to an individual job page, not a search/category page.\n"
             "- Set salary fields to null unless the search result explicitly states a salary.\n"
-            "- Skip job listings whose page indicates the position is expired, removed, or no longer available (e.g. \"abgelaufen\", \"nicht mehr verfügbar\").\n"
+            '- Skip job listings whose page indicates the position is expired, removed, or no longer available (e.g. "abgelaufen", "nicht mehr verfügbar").\n'
             "- If you found fewer listings, return fewer. Do not pad results.\n"
             "- Never invent job listings. Only extract jobs explicitly mentioned in search results."
         )
 
     def _search_and_extract(self, query: str) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
-        tools = [{
-            "type": "web_search_20250305",
-            "name": "web_search",
-            "max_uses": 10,
-            "allowed_domains": self._boards,
-            "user_location": {
-                "type": "approximate",
-                "country": "DE",
-            },
-        }]
+        tools = [
+            {
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 10,
+                "allowed_domains": self._boards,
+                "user_location": {
+                    "type": "approximate",
+                    "country": "DE",
+                },
+            }
+        ]
         system = self._build_system_prompt()
         user_message = f"Search for {query} job listings and extract what you find"
         messages = [{"role": "user", "content": user_message}]
@@ -297,9 +302,7 @@ class ClaudeScraper:
         search_urls = self._extract_search_result_urls(response)
         logger.info("Found %d ground-truth URLs from web_search results", len(search_urls))
 
-        raw_text = "\n\n".join(
-            block.text for block in response.content if block.type == "text"
-        )
+        raw_text = "\n\n".join(block.text for block in response.content if block.type == "text")
         if not raw_text.strip():
             raise RuntimeError(
                 "Claude API returned no text content. "
@@ -318,10 +321,13 @@ class ClaudeScraper:
             follow_up_messages = [
                 {"role": "user", "content": user_message},
                 {"role": "assistant", "content": raw_text},
-                {"role": "user", "content": (
-                    "Now output ONLY the JSON array of job listings you found. "
-                    "No commentary, no markdown fences — just the raw JSON array."
-                )},
+                {
+                    "role": "user",
+                    "content": (
+                        "Now output ONLY the JSON array of job listings you found. "
+                        "No commentary, no markdown fences — just the raw JSON array."
+                    ),
+                },
             ]
             retry_response = self._make_api_call(follow_up_messages, max_tokens=4096, system=system)
             retry_text = "\n\n".join(
@@ -330,9 +336,7 @@ class ClaudeScraper:
             retry_text = re.sub(r"```(?:json)?\s*", "", retry_text).strip().rstrip("`").strip()
             data = self._extract_json(retry_text)
             if data is None:
-                raise RuntimeError(
-                    f"Failed to parse job listings after retry: {retry_text[:200]}"
-                )
+                raise RuntimeError(f"Failed to parse job listings after retry: {retry_text[:200]}")
 
         listings: list[JobListing] = []
         skipped = 0

@@ -10,6 +10,7 @@ from pydantic import BaseModel, field_validator, model_validator
 
 class JobListing(BaseModel):
     """Represents a single job listing"""
+
     title: str
     company: str = ""
     location: str = ""
@@ -164,7 +165,9 @@ class JobAnalyzer:
         if salary_stats["count"] > 0:
             report += f"- **Listings with Salary Info:** {salary_stats['count']}\n"
             report += f"- **Average Salary:** €{salary_stats['average']:,.0f}\n"
-            report += f"- **Salary Range:** €{salary_stats['min']:,.0f} - €{salary_stats['max']:,.0f}\n"
+            report += (
+                f"- **Salary Range:** €{salary_stats['min']:,.0f} - €{salary_stats['max']:,.0f}\n"
+            )
 
         report += "\n"
 
@@ -179,7 +182,9 @@ class JobAnalyzer:
         # Listings by location
         report += "## Top Locations\n\n"
         location_counts = self.get_listings_by_location()
-        for location, count in sorted(location_counts.items(), key=lambda x: x[1], reverse=True)[:10]:
+        for location, count in sorted(location_counts.items(), key=lambda x: x[1], reverse=True)[
+            :10
+        ]:
             report += f"- **{location}:** {count} listings\n"
 
         report += "\n"
@@ -230,7 +235,7 @@ class JobAnalyzer:
 
             line = (
                 f'"{listing.title}","{listing.company}","{listing.location}",'
-                f'{salary_min},{salary_max},{listing.salary_currency},'
+                f"{salary_min},{salary_max},{listing.salary_currency},"
                 f'"{listing.work_type}","{listing.job_board}","{url}","{posted_date}"'
             )
             lines.append(line)

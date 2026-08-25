@@ -11,6 +11,7 @@ import os
 
 class SeniorityLevel(str, Enum):
     """Job seniority levels"""
+
     JUNIOR = "Junior"
     MID_LEVEL = "Mid-level"
     SENIOR = "Senior"
@@ -19,6 +20,7 @@ class SeniorityLevel(str, Enum):
 
 class WorkType(str, Enum):
     """Work arrangement types"""
+
     REMOTE = "Remote only"
     HYBRID = "Remote/Hybrid"
     ONSITE = "Onsite only"
@@ -27,6 +29,7 @@ class WorkType(str, Enum):
 
 class OutputFormat(str, Enum):
     """Output file formats"""
+
     MARKDOWN = "markdown"
     CSV = "csv"
     JSON = "json"
@@ -34,6 +37,7 @@ class OutputFormat(str, Enum):
 
 class ScraperBackend(str, Enum):
     """Available scraper backends"""
+
     CLAUDE = "claude"
     JOBSPY = "jobspy"
 
@@ -41,13 +45,16 @@ class ScraperBackend(str, Enum):
 @dataclass
 class JobSearchParams:
     """Parameters for job search"""
+
     keywords: str = "AI Engineer"
-    job_title_alternatives: list[str] = field(default_factory=lambda: [
-        "Machine Learning Engineer",
-        "ML Engineer",
-        "Artificial Intelligence Engineer",
-        "Deep Learning Engineer"
-    ])
+    job_title_alternatives: list[str] = field(
+        default_factory=lambda: [
+            "Machine Learning Engineer",
+            "ML Engineer",
+            "Artificial Intelligence Engineer",
+            "Deep Learning Engineer",
+        ]
+    )
     location: str = "All of Germany"
     specific_cities: list[str] = field(default_factory=list)
     country_code: str = "DE"
@@ -64,6 +71,7 @@ class JobSearchParams:
 @dataclass
 class JobBoardConfig:
     """Configuration for job board searches"""
+
     search_stepstone: bool = False
     search_indeed: bool = True
     search_linkedin: bool = False
@@ -76,6 +84,7 @@ class JobBoardConfig:
 @dataclass
 class OutputConfig:
     """Output configuration"""
+
     output_directory: Path = field(default_factory=lambda: Path.cwd() / "data" / "results")
     output_format: OutputFormat = OutputFormat.MARKDOWN
     generate_summary: bool = True
@@ -90,6 +99,7 @@ class OutputConfig:
 @dataclass
 class Config:
     """Main configuration class"""
+
     search_params: JobSearchParams = field(default_factory=JobSearchParams)
     job_boards: JobBoardConfig = field(default_factory=JobBoardConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
@@ -135,9 +145,7 @@ class Config:
             job_boards=job_boards,
             output=output,
             verbose=os.getenv("VERBOSE", "false").lower() == "true",
-            scraper_backend=ScraperBackend(
-                os.getenv("SCRAPER_BACKEND", "claude")
-            ),
+            scraper_backend=ScraperBackend(os.getenv("SCRAPER_BACKEND", "claude")),
             claude_api_key=os.getenv("CLAUDE_API_KEY"),
             claude_model=os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
             max_jobs_per_search=int(os.getenv("MAX_JOBS_PER_SEARCH", "200")),
@@ -147,7 +155,7 @@ class Config:
     @classmethod
     def from_json(cls, filepath: Path) -> "Config":
         """Load configuration from JSON file"""
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             data = json.load(f)
 
         search_params = JobSearchParams(**data.get("search_params", {}))

@@ -239,15 +239,11 @@ class TestRelevanceFiltering:
     """Tests title relevance filtering."""
 
     def test_relevant_title_matches(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens(
-            "AI Engineer", ["Machine Learning Engineer"]
-        )
+        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Machine Learning Engineer"])
         assert JobSpyScraper._is_relevant("Senior AI Engineer (m/w/d)", tokens)
 
     def test_irrelevant_title_rejected(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens(
-            "AI Engineer", ["Machine Learning Engineer"]
-        )
+        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Machine Learning Engineer"])
         assert not JobSpyScraper._is_relevant(
             "Shopify API GraphQL - Senior Backend Developer", tokens
         )
@@ -269,15 +265,11 @@ class TestRelevanceFiltering:
         assert not JobSpyScraper._is_relevant("Senior Manager", tokens)
 
     def test_data_scientist_matches_data(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens(
-            "AI Engineer", ["Data Scientist"]
-        )
+        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Data Scientist"])
         assert JobSpyScraper._is_relevant("Data Scientist", tokens)
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
-    def test_filters_irrelevant_titles_in_scrape(
-        self, mock_scrape, scraper: JobSpyScraper
-    ) -> None:
+    def test_filters_irrelevant_titles_in_scrape(self, mock_scrape, scraper: JobSpyScraper) -> None:
         df = pd.DataFrame(
             {
                 "site": ["indeed", "indeed", "indeed"],
@@ -328,9 +320,7 @@ class TestScrape:
         assert len(listings) == 4
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
-    def test_empty_dataframe_returns_empty_list(
-        self, mock_scrape, scraper: JobSpyScraper
-    ) -> None:
+    def test_empty_dataframe_returns_empty_list(self, mock_scrape, scraper: JobSpyScraper) -> None:
         mock_scrape.return_value = pd.DataFrame()
         params = JobSearchParams(keywords="nonexistent", location="Berlin")
 
@@ -603,9 +593,7 @@ class TestBuildKeywordTokens:
         assert "engineer" in tokens
 
     def test_includes_alternatives(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens(
-            "AI Engineer", ["Machine Learning Engineer"]
-        )
+        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Machine Learning Engineer"])
         assert "machine" in tokens
         assert "learning" in tokens
 

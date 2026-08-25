@@ -21,14 +21,10 @@ class TestIndeedAdapter:
         assert not adapter.is_job_listing_url("https://de.indeed.com/jobs?q=engineer&jk=abc")
 
     def test_rejects_search_page(self, adapter):
-        assert not adapter.is_job_listing_url(
-            "https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"
-        )
+        assert not adapter.is_job_listing_url("https://de.indeed.com/AI-Engineer-Jobs-in-Berlin")
 
     def test_rejects_category_page(self, adapter):
-        assert not adapter.is_job_listing_url(
-            "https://de.indeed.com/jobs-in-Berlin"
-        )
+        assert not adapter.is_job_listing_url("https://de.indeed.com/jobs-in-Berlin")
 
 
 class TestStepStoneAdapter:
@@ -42,14 +38,10 @@ class TestStepStoneAdapter:
         )
 
     def test_accepts_jobs_id_url(self, adapter):
-        assert adapter.is_job_listing_url(
-            "https://www.stepstone.de/jobs/12345"
-        )
+        assert adapter.is_job_listing_url("https://www.stepstone.de/jobs/12345")
 
     def test_rejects_search_page(self, adapter):
-        assert not adapter.is_job_listing_url(
-            "https://www.stepstone.de/work/ai-engineer-in-berlin"
-        )
+        assert not adapter.is_job_listing_url("https://www.stepstone.de/work/ai-engineer-in-berlin")
 
 
 class TestLinkedInAdapter:
@@ -58,14 +50,10 @@ class TestLinkedInAdapter:
         return get_adapter("linkedin.com")
 
     def test_accepts_jobs_view_url(self, adapter):
-        assert adapter.is_job_listing_url(
-            "https://www.linkedin.com/jobs/view/12345"
-        )
+        assert adapter.is_job_listing_url("https://www.linkedin.com/jobs/view/12345")
 
     def test_rejects_jobs_search_url(self, adapter):
-        assert not adapter.is_job_listing_url(
-            "https://www.linkedin.com/jobs/search/?keywords=AI"
-        )
+        assert not adapter.is_job_listing_url("https://www.linkedin.com/jobs/search/?keywords=AI")
 
 
 class TestFallbackAdapter:

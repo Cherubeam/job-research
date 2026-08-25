@@ -17,7 +17,9 @@ def create_cache_key(
     salary_max: int = 0,
 ) -> str:
     """Create a cache key from search parameters"""
-    key_str = f"{board}:{keywords}:{location}:{work_type}:{seniority_level}:{salary_min}:{salary_max}"
+    key_str = (
+        f"{board}:{keywords}:{location}:{work_type}:{seniority_level}:{salary_min}:{salary_max}"
+    )
     return hashlib.md5(key_str.encode()).hexdigest()
 
 
@@ -32,7 +34,7 @@ def save_cache(cache_dir: Path, key: str, data: Any, duration_hours: int = 24) -
     }
 
     cache_file = cache_dir / f"{key}.json"
-    with open(cache_file, 'w') as f:
+    with open(cache_file, "w") as f:
         json.dump(cache_entry, f)
 
 
@@ -43,7 +45,7 @@ def load_cache(cache_dir: Path, key: str) -> Optional[Any]:
     if not cache_file.exists():
         return None
 
-    with open(cache_file, 'r') as f:
+    with open(cache_file, "r") as f:
         cache_entry = json.load(f)
 
     expires_at = datetime.fromisoformat(cache_entry["expires_at"])
@@ -60,7 +62,9 @@ def ensure_directories(output_dir: Path, cache_dir: Path) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
 
-def format_salary(min_salary: Optional[int], max_salary: Optional[int], currency: str = "EUR") -> str:
+def format_salary(
+    min_salary: Optional[int], max_salary: Optional[int], currency: str = "EUR"
+) -> str:
     """Format salary range as string"""
     if not min_salary or not max_salary:
         return "N/A"
@@ -76,7 +80,8 @@ def generate_output_filename(prefix: str = "job_search", ext: str = "md") -> str
 def extract_number_from_text(text: str) -> Optional[int]:
     """Extract first number from text"""
     import re
-    match = re.search(r'\d+(?:\.\d+)?', text.replace('.', '').replace(',', ''))
+
+    match = re.search(r"\d+(?:\.\d+)?", text.replace(".", "").replace(",", ""))
     if match:
         try:
             return int(match.group())

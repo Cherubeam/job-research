@@ -72,9 +72,7 @@ def test_both_dedups_collapse_identical_urls(backend, claude_scraper, jobspy_scr
         JobListing(title="Different Title", company="Other", job_url="https://a.example/1"),
     ]
     dedup = (
-        claude_scraper._deduplicate_listings
-        if backend == "claude"
-        else jobspy_scraper._deduplicate
+        claude_scraper._deduplicate_listings if backend == "claude" else jobspy_scraper._deduplicate
     )
     assert len(dedup(listings)) == 1
 
@@ -89,9 +87,7 @@ def test_both_dedups_collapse_title_company_when_url_missing(
         JobListing(title="ai engineer", company="ACME"),  # case-insensitive
     ]
     dedup = (
-        claude_scraper._deduplicate_listings
-        if backend == "claude"
-        else jobspy_scraper._deduplicate
+        claude_scraper._deduplicate_listings if backend == "claude" else jobspy_scraper._deduplicate
     )
     assert len(dedup(listings)) == 1
 

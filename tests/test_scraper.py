@@ -44,6 +44,7 @@ def scraper() -> ClaudeScraper:
 
 # --------------------------------------------------------- Pydantic JobListing
 
+
 class TestJobListingModel:
     def test_rejects_empty_title(self):
         with pytest.raises(ValidationError, match="title must not be empty"):
@@ -96,11 +97,15 @@ class TestJobListingModel:
 
 # ----------------------------------------------------------------- salary norm
 
-@pytest.mark.parametrize("salary_str_min,salary_str_max,expected_min,expected_max", [
-    ("€80.000", "120.000", 80000, 120000),
-    ("70k", "100k", 70000, 100000),
-    ("ab 80000 EUR", None, 80000, None),
-])
+
+@pytest.mark.parametrize(
+    "salary_str_min,salary_str_max,expected_min,expected_max",
+    [
+        ("€80.000", "120.000", 80000, 120000),
+        ("70k", "100k", 70000, 100000),
+        ("ab 80000 EUR", None, 80000, None),
+    ],
+)
 def test_salary_coercion_from_strings(salary_str_min, salary_str_max, expected_min, expected_max):
     listing = JobListing(
         title="Eng",
@@ -112,6 +117,7 @@ def test_salary_coercion_from_strings(salary_str_min, salary_str_max, expected_m
 
 
 # --------------------------------------------------------------- deduplication
+
 
 def test_deduplicate_by_url(scraper):
     listings = [
@@ -134,6 +140,7 @@ def test_deduplicate_by_title_company(scraper):
 
 
 # ---------------------------------------------------------- build_search_query
+
 
 def test_build_search_query_contains_keywords(scraper, sample_job_search_params):
     query = scraper._build_search_query(sample_job_search_params)
@@ -171,12 +178,15 @@ def test_default_boards_only_indeed(sample_job_search_params):
 def test_enabled_board_added_to_boards(sample_job_search_params):
     board_config = JobBoardConfig(search_stepstone=True)
     with patch("job_research.scraper.anthropic.Anthropic"):
-        s = ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config)
+        s = ClaudeScraper(
+            api_key="sk-test", model="claude-haiku-4-5-20251001", board_config=board_config
+        )
     assert "stepstone.de" in s._boards
     assert "de.indeed.com" in s._boards
 
 
 # ---------------------------------------------------------- API call (mocked)
+
 
 def test_make_api_call_retries_on_server_error(scraper):
     """Non-429 APIStatusError uses short exponential backoff."""
@@ -210,9 +220,7 @@ def test_make_api_call_rate_limit_uses_retry_after_header(scraper):
 
     response_mock = MagicMock(status_code=429)
     response_mock.headers = {"retry-after": "30"}
-    error = anthropic_module.RateLimitError(
-        "rate limited", response=response_mock, body={}
-    )
+    error = anthropic_module.RateLimitError("rate limited", response=response_mock, body={})
     success_response = MagicMock()
     success_response.content = []
     mock_client.messages.create.side_effect = [error, success_response]
@@ -234,9 +242,7 @@ def test_make_api_call_rate_limit_defaults_to_60s(scraper):
 
     response_mock = MagicMock(status_code=429)
     response_mock.headers = {}
-    error = anthropic_module.RateLimitError(
-        "rate limited", response=response_mock, body={}
-    )
+    error = anthropic_module.RateLimitError("rate limited", response=response_mock, body={})
     success_response = MagicMock()
     success_response.content = []
     mock_client.messages.create.side_effect = [error, success_response]
@@ -264,12 +270,20 @@ def test_search_jobs_raises_on_exception(scraper, sample_job_search_params, tmp_
 
 # -------------------------------------------------- _search_and_extract tests
 
+
 class TestSearchAndExtract:
     def test_returns_listings_matching_search_urls(self, scraper):
         jobs = [
-            {"title": "AI Engineer", "company": "TechCo", "location": "Berlin",
-             "salary_min": 80000, "salary_max": 120000, "work_type": "Remote",
-             "job_board": "Indeed", "job_url": "https://de.indeed.com/viewjob?jk=abc123"},
+            {
+                "title": "AI Engineer",
+                "company": "TechCo",
+                "location": "Berlin",
+                "salary_min": 80000,
+                "salary_max": 120000,
+                "work_type": "Remote",
+                "job_board": "Indeed",
+                "job_url": "https://de.indeed.com/viewjob?jk=abc123",
+            },
         ]
         scraper._client.messages.create.return_value = _make_text_response(
             json.dumps(jobs),
@@ -284,10 +298,18 @@ class TestSearchAndExtract:
     def test_filters_fabricated_urls(self, scraper):
         """Listings with URLs not in search results are discarded."""
         jobs = [
-            {"title": "Real Job", "company": "Co", "location": "Berlin",
-             "job_url": "https://de.indeed.com/viewjob?jk=real123"},
-            {"title": "Fake Job", "company": "Co", "location": "Berlin",
-             "job_url": "https://de.indeed.com/viewjob?jk=fabricated"},
+            {
+                "title": "Real Job",
+                "company": "Co",
+                "location": "Berlin",
+                "job_url": "https://de.indeed.com/viewjob?jk=real123",
+            },
+            {
+                "title": "Fake Job",
+                "company": "Co",
+                "location": "Berlin",
+                "job_url": "https://de.indeed.com/viewjob?jk=fabricated",
+            },
         ]
         scraper._client.messages.create.return_value = _make_text_response(
             json.dumps(jobs),
@@ -335,8 +357,14 @@ class TestSearchAndExtract:
                 scraper._search_and_extract("test query")
 
     def test_strips_markdown_fences(self, scraper):
-        jobs = [{"title": "ML Eng", "company": "Co", "location": "Berlin",
-                 "job_url": "https://de.indeed.com/viewjob?jk=fence1"}]
+        jobs = [
+            {
+                "title": "ML Eng",
+                "company": "Co",
+                "location": "Berlin",
+                "job_url": "https://de.indeed.com/viewjob?jk=fence1",
+            }
+        ]
         fenced = f"```json\n{json.dumps(jobs)}\n```"
         scraper._client.messages.create.return_value = _make_text_response(
             fenced,
@@ -349,8 +377,11 @@ class TestSearchAndExtract:
 
     def test_skips_invalid_items(self, scraper):
         items = [
-            {"title": "Valid Job", "company": "Co",
-             "job_url": "https://de.indeed.com/viewjob?jk=valid"},
+            {
+                "title": "Valid Job",
+                "company": "Co",
+                "job_url": "https://de.indeed.com/viewjob?jk=valid",
+            },
             {"company": "No Title"},  # missing title → ValidationError
             {"title": "", "company": "Empty Title"},  # empty title → ValidationError
         ]
@@ -366,8 +397,14 @@ class TestSearchAndExtract:
 
     def test_narrative_response_triggers_followup(self, scraper):
         """When initial response is narrative, a follow-up call extracts JSON."""
-        jobs = [{"title": "AI Eng", "company": "Co", "location": "Berlin",
-                 "job_url": "https://de.indeed.com/viewjob?jk=narr1"}]
+        jobs = [
+            {
+                "title": "AI Eng",
+                "company": "Co",
+                "location": "Berlin",
+                "job_url": "https://de.indeed.com/viewjob?jk=narr1",
+            }
+        ]
         scraper._client.messages.create.side_effect = [
             _make_text_response(
                 "I need to search for more specific job listings...",
@@ -392,8 +429,14 @@ class TestSearchAndExtract:
                 scraper._search_and_extract("test query")
 
     def test_extracts_json_from_prose(self, scraper):
-        jobs = [{"title": "Data Eng", "company": "Co", "location": "Berlin",
-                 "job_url": "https://de.indeed.com/viewjob?jk=prose1"}]
+        jobs = [
+            {
+                "title": "Data Eng",
+                "company": "Co",
+                "location": "Berlin",
+                "job_url": "https://de.indeed.com/viewjob?jk=prose1",
+            }
+        ]
         prose = f"Here are the results:\n{json.dumps(jobs)}\nEnd of results."
         scraper._client.messages.create.return_value = _make_text_response(
             prose,
@@ -406,6 +449,7 @@ class TestSearchAndExtract:
 
 
 # ----------------------------------------- URL extraction and filtering tests
+
 
 class TestExtractSearchResultUrls:
     def test_extracts_urls_from_web_search_results(self):
@@ -444,7 +488,9 @@ class TestValidateListingUrls:
     def test_discards_search_page_url(self):
         """URL is in search results but doesn't match job URL pattern."""
         listings = [
-            JobListing(title="Search Page", job_url="https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"),
+            JobListing(
+                title="Search Page", job_url="https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"
+            ),
         ]
         search_urls = {"https://de.indeed.com/AI-Engineer-Jobs-in-Berlin"}
         result = ClaudeScraper._validate_listing_urls(listings, search_urls, ["de.indeed.com"])
@@ -485,6 +531,7 @@ class TestValidateListingUrls:
 
 # ---------------------------------------------- search_jobs integration tests
 
+
 def test_search_jobs_raises_on_empty_extraction(scraper, sample_job_search_params, tmp_cache_dir):
     """search_jobs raises RuntimeError when the API returns a valid empty JSON array."""
     scraper._client.messages.create.return_value = _make_text_response("[]")
@@ -493,7 +540,9 @@ def test_search_jobs_raises_on_empty_extraction(scraper, sample_job_search_param
             scraper.search_jobs(sample_job_search_params, tmp_cache_dir)
 
 
-def test_search_jobs_raises_when_all_items_filtered(scraper, sample_job_search_params, tmp_cache_dir):
+def test_search_jobs_raises_when_all_items_filtered(
+    scraper, sample_job_search_params, tmp_cache_dir
+):
     """search_jobs raises RuntimeError when all extracted items lack required fields."""
     items = [{"company": "A", "location": "Berlin"}, {"company": "B"}]
     scraper._client.messages.create.return_value = _make_text_response(json.dumps(items))
@@ -506,15 +555,30 @@ def test_search_jobs_happy_path(scraper, sample_job_search_params, tmp_cache_dir
     """search_jobs returns JobListing objects when API returns valid job data."""
     urls = ["https://de.indeed.com/viewjob?jk=abc", "https://de.indeed.com/viewjob?jk=def"]
     jobs = [
-        {"title": "AI Engineer", "company": "TechCo", "location": "Berlin",
-         "salary_min": 80000, "salary_max": 120000, "work_type": "Remote",
-         "job_board": "Indeed", "job_url": urls[0]},
-        {"title": "ML Engineer", "company": "DataInc", "location": "Munich",
-         "salary_min": None, "salary_max": None, "work_type": "Hybrid",
-         "job_board": "Indeed", "job_url": urls[1]},
+        {
+            "title": "AI Engineer",
+            "company": "TechCo",
+            "location": "Berlin",
+            "salary_min": 80000,
+            "salary_max": 120000,
+            "work_type": "Remote",
+            "job_board": "Indeed",
+            "job_url": urls[0],
+        },
+        {
+            "title": "ML Engineer",
+            "company": "DataInc",
+            "location": "Munich",
+            "salary_min": None,
+            "salary_max": None,
+            "work_type": "Hybrid",
+            "job_board": "Indeed",
+            "job_url": urls[1],
+        },
     ]
     scraper._client.messages.create.return_value = _make_text_response(
-        json.dumps(jobs), search_urls=urls,
+        json.dumps(jobs),
+        search_urls=urls,
     )
     with patch("job_research.scraper.time.sleep"):
         result = scraper.search_jobs(sample_job_search_params, tmp_cache_dir)

@@ -8,14 +8,37 @@ from job_research.analyzer import JobAnalyzer, JobListing
 @pytest.fixture
 def analyzer_with_listings() -> JobAnalyzer:
     analyzer = JobAnalyzer()
-    analyzer.add_listings([
-        JobListing(title="AI Engineer", company="Alpha GmbH", location="Berlin",
-                   salary_min=80000, salary_max=120000, job_board="StepStone", work_type="Hybrid"),
-        JobListing(title="ML Engineer", company="Beta AG", location="Munich",
-                   salary_min=70000, salary_max=100000, job_board="LinkedIn", work_type="Remote"),
-        JobListing(title="Data Scientist", company="Gamma SE", location="Berlin",
-                   salary_min=75000, salary_max=110000, job_board="StepStone", work_type="Onsite"),
-    ])
+    analyzer.add_listings(
+        [
+            JobListing(
+                title="AI Engineer",
+                company="Alpha GmbH",
+                location="Berlin",
+                salary_min=80000,
+                salary_max=120000,
+                job_board="StepStone",
+                work_type="Hybrid",
+            ),
+            JobListing(
+                title="ML Engineer",
+                company="Beta AG",
+                location="Munich",
+                salary_min=70000,
+                salary_max=100000,
+                job_board="LinkedIn",
+                work_type="Remote",
+            ),
+            JobListing(
+                title="Data Scientist",
+                company="Gamma SE",
+                location="Berlin",
+                salary_min=75000,
+                salary_max=110000,
+                job_board="StepStone",
+                work_type="Onsite",
+            ),
+        ]
+    )
     return analyzer
 
 
@@ -48,11 +71,13 @@ def test_get_salary_stats(analyzer_with_listings):
 
 def test_get_salary_stats_ignores_listings_without_both_bounds():
     analyzer = JobAnalyzer()
-    analyzer.add_listings([
-        JobListing(title="A", salary_min=60000, salary_max=80000),
-        JobListing(title="B", salary_min=60000),  # max missing -> excluded
-        JobListing(title="C"),                    # both missing -> excluded
-    ])
+    analyzer.add_listings(
+        [
+            JobListing(title="A", salary_min=60000, salary_max=80000),
+            JobListing(title="B", salary_min=60000),  # max missing -> excluded
+            JobListing(title="C"),  # both missing -> excluded
+        ]
+    )
     stats = analyzer.get_salary_stats()
     assert stats["count"] == 1
     assert stats["average"] == 70000.0

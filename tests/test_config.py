@@ -45,7 +45,15 @@ def test_config_from_env_defaults_only_indeed(monkeypatch):
     # Prevent .env file from injecting values
     monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
     # Clear any SEARCH_* vars that might be set
-    for board in ["STEPSTONE", "INDEED", "LINKEDIN", "MONSTER", "HONEYPOT", "STARTUPS", "ARBEITSAGENTUR"]:
+    for board in [
+        "STEPSTONE",
+        "INDEED",
+        "LINKEDIN",
+        "MONSTER",
+        "HONEYPOT",
+        "STARTUPS",
+        "ARBEITSAGENTUR",
+    ]:
         monkeypatch.delenv(f"SEARCH_{board}", raising=False)
     monkeypatch.delenv("SCRAPER_BACKEND", raising=False)
 
