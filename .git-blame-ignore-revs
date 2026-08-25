@@ -1,0 +1,6 @@
+# Bulk reformatting commits, skipped by `git blame`.
+# Enable locally once with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply black to the whole codebase
+f247a30dd32a58c660341eb97851b0c9e13bfbd5
