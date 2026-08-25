@@ -6,9 +6,9 @@
 
 ---
 
-> **Progress:** Phases 0, 1, and 2 are merged. Phase 3 (source registry) is next.
-> Findings still open: F2 (jobspy hardcodes its board list), F11 (no persistence),
-> F12 (documentation drift — corrected as each phase lands).
+> **Progress:** Phases 0-3 are merged. Phase 4 (Bundesagentur source) is next.
+> Findings still open: F11 (no persistence). F12 (documentation drift) is
+> corrected as each phase lands.
 
 ## 1. Verdict
 
@@ -68,7 +68,7 @@ the salary slider invalidates the cache and forces a full re-fetch that returns
 byte-identical results. The user pays latency (and, on the Claude backend, money)
 for a change that cannot affect the outcome.
 
-### F2 — The jobspy backend ignores board configuration (Phase 3)
+### F2 — The jobspy backend ignores board configuration (Phase 3) — RESOLVED
 
 `site_name` is hardcoded to `["linkedin", "indeed"]`
 ([jobspy_scraper.py:132](../src/job_research/jobspy_scraper.py)). All seven
@@ -271,7 +271,7 @@ slip.
 - Scrapers reduce to a single-method Protocol; `max_jobs` and `total_found`
   become pipeline concerns, ending the per-backend divergence (F10).
 
-### Phase 3 — Source registry · *medium*
+### Phase 3 — Source registry · *medium* — **DONE**
 
 - `sources/catalog.py` replaces the seven `JobBoardConfig` booleans with a
   registry keyed by source id; config carries `enabled_sources: set[str]`.

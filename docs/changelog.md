@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `src/job_research/sources/` — a source registry declaring, per board: id, label, domain, which backends can reach it, its listing-URL pattern, whether it is on by default, and any caveat.
+- `ENABLED_SOURCES` env var and a **Job Sources** picker in the UI, offering only sources the active backend can actually search. Sources with a caveat are flagged.
+- `tests/test_catalog.py` — registry integrity checks (unique ids, jobspy sources declare a site name, defaults work on both backends, Arbeitsagentur stays off by default).
 - `src/job_research/pipeline/` — package split into `relevance.py`, `dedup.py`, `filters.py`, `interleave.py`.
 - **Relevance scoring** replaces the single-token match: a title must cover more than half of some search phrase (`RELEVANCE_THRESHOLD`, default 0.6). "Sales Engineer" no longer matches "AI Engineer".
 - **Negative keywords** (`EXCLUDED_KEYWORDS` + a UI field) drop matching titles outright, matched on whole words so "sales" does not reject "Salesforce".
@@ -25,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- **The jobspy backend honours the source selection** instead of hardcoding `["linkedin", "indeed"]`, so the board toggles are no longer fiction for the default backend (F2).
+- `JobBoardConfig` and its seven booleans removed; `boards.py` folded into the registry. `SEARCH_*` env vars still work with a deprecation warning when `ENABLED_SOURCES` is unset.
+- `ClaudeScraper` no longer takes `board_config`; sources are resolved per search, so a selection change no longer needs a new scraper.
+- `Config.to_dict` is generated from `fields()` and excludes `claude_api_key` — the hand-written version had already drifted, missing four fields.
+- Default sources are now Indeed **and** LinkedIn for both backends. The Claude backend previously defaulted to Indeed only; set `ENABLED_SOURCES=indeed` to restore that.
 - **One deduplication rule for every backend.** The two scrapers previously disagreed: Claude keyed on URL alone (so a cross-posted job survived twice) and jobspy on title+company (so the same role in two cities collapsed into one). Now: normalized URL, then title + company + normalized location.
 - Relevance filtering and deduplication moved out of the scrapers into the pipeline, so both apply to every backend.
 - **Salary and seniority now actually filter results.** They previously reached only the cache key, so adjusting them forced a full re-fetch that returned identical listings.

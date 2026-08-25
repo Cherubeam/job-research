@@ -15,7 +15,7 @@ Job Research Tool aggregates job listings from German job boards through two ind
 ## Features
 
 - **Dual Scraper Backends**: Claude API web search (`web_search_20250305`) and python-jobspy — one selected per run via `SCRAPER_BACKEND`
-- **Job Board Support**: Indeed and LinkedIn via jobspy; Indeed, StepStone, LinkedIn, Monster, Honeypot, startup.jobs, and Arbeitsagentur via the Claude backend's `SEARCH_*` toggles
+- **Source Registry**: One place declares every board, which backends can reach it, and how to recognise its listing URLs. The UI offers only sources the active backend can actually search
 - **Relevance Scoring**: Titles are scored against your keywords and alternatives, with a configurable threshold and a negative-keyword list
 - **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
 - **Salary Normalization**: Hourly and monthly pay annualised so filters and statistics compare like with like
@@ -81,6 +81,7 @@ CLAUDE_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 MAX_JOBS_PER_SEARCH=200        # max results to show (default 200)
 INTERLEAVE_SITES=true          # mix results from different job boards
+ENABLED_SOURCES=indeed,linkedin  # which boards to search
 EXCLUDED_KEYWORDS=             # drop titles containing these (comma-separated)
 RELEVANCE_THRESHOLD=0.6        # phrase coverage a title must reach to be kept
 JOB_KEYWORDS=AI Engineer
@@ -122,9 +123,23 @@ Gradio UI → run_job_research()
                                          JobAnalyzer → Report
 ```
 
+### Sources
+
+| Source | Claude backend | jobspy backend | Default |
+|---|---|---|---|
+| Indeed.de | yes | yes | on |
+| LinkedIn | yes | yes | on |
+| StepStone.de | yes | — | off |
+| Monster.de | yes | — | off |
+| Honeypot.io | yes | — | off |
+| startup.jobs | yes | — | off |
+| Arbeitsagentur.de | yes | — | off — see [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) |
+
+Selecting a source the active backend cannot reach searches less rather than
+failing; selecting nothing it can reach fails loudly.
+
 Remaining gaps are tracked in the [architecture review](docs/architecture-review.md):
-the jobspy backend still hardcodes its board list (F2) and there is no
-run-over-run persistence yet (F11).
+there is no run-over-run persistence yet (F11).
 
 ## Project Structure
 
@@ -136,7 +151,7 @@ job-research/
 │   │   ├── config.py           # Configuration management
 │   │   ├── scraper.py          # ClaudeScraper (Claude API web search)
 │   │   ├── jobspy_scraper.py   # JobSpyScraper (python-jobspy)
-│   │   ├── boards.py           # Job board definitions and site config
+│   │   ├── sources/            # Source registry (what exists, who can reach it)
 │   │   ├── pipeline/           # Relevance, dedup, filters, interleaving
 │   │   ├── salary.py           # Salary parsing and annualisation
 │   │   ├── analyzer.py         # Job analysis and reporting
