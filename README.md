@@ -16,9 +16,11 @@ Job Research Tool aggregates job listings from German job boards through two ind
 
 - **Dual Scraper Backends**: Claude API web search (`web_search_20250305`) and python-jobspy — one selected per run via `SCRAPER_BACKEND`
 - **Job Board Support**: Indeed and LinkedIn via jobspy; Indeed, StepStone, LinkedIn, Monster, Honeypot, startup.jobs, and Arbeitsagentur via the Claude backend's `SEARCH_*` toggles
+- **Relevance Scoring**: Titles are scored against your keywords and alternatives, with a configurable threshold and a negative-keyword list
 - **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
+- **Salary Normalization**: Hourly and monthly pay annualised so filters and statistics compare like with like
 - **Multi-Source Interleaving**: Results from different boards are round-robin mixed before truncation, so one board cannot crowd out the rest
-- **Deduplication**: By URL and by title+company
+- **Cross-Source Deduplication**: One rule for every backend — normalized URL, then title + company + location
 - **Data Analysis**: Salary statistics and distribution by board, location, and work type
 - **Multiple Export Formats**: Reports in Markdown or CSV
 - **Smart Caching**: 24h cache keyed only on what the backend actually received, so adjusting salary or seniority re-filters instead of re-fetching
@@ -79,6 +81,8 @@ CLAUDE_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 MAX_JOBS_PER_SEARCH=200        # max results to show (default 200)
 INTERLEAVE_SITES=true          # mix results from different job boards
+EXCLUDED_KEYWORDS=             # drop titles containing these (comma-separated)
+RELEVANCE_THRESHOLD=0.6        # phrase coverage a title must reach to be kept
 JOB_KEYWORDS=AI Engineer
 LOCATION=All of Germany
 WORK_TYPE=Remote/Hybrid
@@ -98,10 +102,12 @@ Both backends produce a common `JobListing` data model (Pydantic) and return the
 *view* happens afterwards in `pipeline.py`, so it applies to every backend and can
 change without invalidating the cache:
 
-1. **Salary filter** — keeps listings whose stated range overlaps the requested window. Listings with no stated salary are kept.
-2. **Seniority filter** — infers a level from the job title and keeps matching listings. Heuristic; no board exposes a reliable seniority field.
-3. **Interleave** — round-robins across boards so truncation does not favour whichever board was scraped first.
-4. **Truncate** — cuts to `MAX_JOBS_PER_SEARCH`, last, so filtering never returns fewer results than requested for no reason.
+1. **Relevance** — scores each title against the search phrase and its alternatives, keeping those that cover more than half of any one phrase. Negative keywords drop titles outright.
+2. **Deduplicate** — collapses the same posting reached through several sources: normalized URL first, then title + company + location.
+3. **Salary filter** — keeps listings whose stated range overlaps the requested window. Listings with no stated salary are kept.
+4. **Seniority filter** — infers a level from the job title and keeps matching listings. Heuristic; no board exposes a reliable seniority field.
+5. **Interleave** — round-robins across boards so truncation does not favour whichever board was scraped first.
+6. **Truncate** — cuts to `MAX_JOBS_PER_SEARCH`, last, so filtering never returns fewer results than requested for no reason.
 
 The `JobAnalyzer` then generates summary statistics and a formatted report for the UI.
 
@@ -111,15 +117,14 @@ Gradio UI → run_job_research()
                └── JobSpyScraper.search_jobs()  ─┤
                                                  ▼
                                           pipeline.apply()
-                              (salary → seniority → interleave → truncate)
+              (relevance → dedup → salary → seniority → interleave → truncate)
                                                  ▼
                                          JobAnalyzer → Report
 ```
 
-Known gaps are tracked in the [architecture review](docs/architecture-review.md):
-relevance filtering currently runs inside the jobspy backend only (F3),
-deduplication is still duplicated across the two scrapers (F5), and salary
-parsing does not yet detect hourly or monthly figures (F7).
+Remaining gaps are tracked in the [architecture review](docs/architecture-review.md):
+the jobspy backend still hardcodes its board list (F2) and there is no
+run-over-run persistence yet (F11).
 
 ## Project Structure
 
@@ -132,7 +137,8 @@ job-research/
 │   │   ├── scraper.py          # ClaudeScraper (Claude API web search)
 │   │   ├── jobspy_scraper.py   # JobSpyScraper (python-jobspy)
 │   │   ├── boards.py           # Job board definitions and site config
-│   │   ├── pipeline.py         # Post-fetch filtering, interleaving, truncation
+│   │   ├── pipeline/           # Relevance, dedup, filters, interleaving
+│   │   ├── salary.py           # Salary parsing and annualisation
 │   │   ├── analyzer.py         # Job analysis and reporting
 │   │   └── utils.py            # Caching, formatting, parsing
 │   └── ui/

@@ -6,6 +6,10 @@
 
 ---
 
+> **Progress:** Phases 0, 1, and 2 are merged. Phase 3 (source registry) is next.
+> Findings still open: F2 (jobspy hardcodes its board list), F11 (no persistence),
+> F12 (documentation drift — corrected as each phase lands).
+
 ## 1. Verdict
 
 The project is in better shape than its size suggests. The seams are in roughly
@@ -54,7 +58,7 @@ The `research/` corpus is genuinely useful input (though now partly stale).
 
 Ordered by impact. Each maps to a phase in §5.
 
-### F1 — Seniority and salary filters are inert (Phase 1)
+### F1 — Seniority and salary filters are inert (Phase 1) — RESOLVED
 
 `seniority_level`, `salary_minimum`, and `salary_maximum` flow from the UI into
 `create_cache_key()` and **nowhere else**. Neither backend filters on them.
@@ -72,7 +76,7 @@ for a change that cannot affect the outcome.
 advertises StepStone, XING, Monster, and Arbeitsagentur; XING was removed in
 0.2.0 and never restored.
 
-### F3 — Relevance filtering is a single-token OR (Phase 2)
+### F3 — Relevance filtering is a single-token OR (Phase 2) — RESOLVED
 
 `_is_relevant` keeps any title sharing **one** token with the keyword set. With
 the default alternatives that set is
@@ -82,14 +86,14 @@ the default alternatives that set is
 This is the highest-leverage single change for **result quality**. It needs a
 score (exact phrase > token overlap), a threshold, and a negative-keyword list.
 
-### F4 — Global mutable state races with the background thread (Phase 1)
+### F4 — Global mutable state races with the background thread (Phase 1) — RESOLVED
 
 `_config` is module-level. `run_job_research` mutates `_config.search_params` in
 place ([app.py:79](../src/ui/app.py)) and then hands that same object to a daemon
 thread. Two browser tabs, or one double-click, and search A executes with search
 B's parameters. Fix: construct a fresh `JobSearchParams` per request.
 
-### F5 — The scraper seam leaks (Phase 2)
+### F5 — The scraper seam leaks (Phase 2) — RESOLVED
 
 [app.py:92](../src/ui/app.py) duck-types on a *private method*
 (`hasattr(_scraper, "_interleave_by_site")`) to decide whether to pass
@@ -101,32 +105,32 @@ semantics — `ClaudeScraper` dedups by URL *or* title+company, `JobSpyScraper` 
 title+company *and* URL — so the two backends silently disagree about what a
 duplicate is.
 
-### F6 — Cache stores post-truncation results (Phase 1)
+### F6 — Cache stores post-truncation results (Phase 1) — RESOLVED
 
 `JobSpyScraper` interleaves and truncates *before* writing the cache. Raising
 `MAX_JOBS_PER_SEARCH` returns the old, smaller set for 24 hours. The cache should
 hold the normalized full fetch; truncation and interleaving are view concerns.
 
-### F7 — Salary parsing is unanchored (Phase 2)
+### F7 — Salary parsing is unanchored (Phase 2) — RESOLVED
 
 `_parse_salary_range` takes the first two integers found in the string, with no
 unit or period detection. `"35 Std./Woche, 60.000 €"` yields `(35, 60000)`. The
 README claims normalization across annual/monthly/hourly; no such logic exists.
 Related: `if listing.salary_min and ...` treats a legitimate `0` as missing.
 
-### F8 — Hand-rolled CSV without escaping (Phase 1)
+### F8 — Hand-rolled CSV without escaping (Phase 1) — RESOLVED
 
 [analyzer.py:231](../src/job_research/analyzer.py) builds CSV with f-strings. Any
 title or company containing a double quote produces malformed output. Use the
 stdlib `csv` module.
 
-### F9 — No CI; mypy currently fails (Phase 0)
+### F9 — No CI; mypy currently fails (Phase 0) — RESOLVED
 
 `uv run mypy src/` reports 8 errors despite being documented in `CLAUDE.md`.
 There is no `.github/` at all. Every phase below is a refactor, and refactoring
 without an enforced gate is refactoring blind.
 
-### F10 — Backend behaviour diverges silently (Phase 2)
+### F10 — Backend behaviour diverges silently (Phase 2) — RESOLVED in Phase 1
 
 `ClaudeScraper` never truncates to `max_jobs` (it is a prompt hint only) and
 exposes no `total_found`, so [app.py:149](../src/ui/app.py)'s
@@ -146,7 +150,7 @@ Pipeline" section describes relevance *scoring*, cross-source dedup, and
 salary normalization across periods — none of which exist. `research/` documents
 the Bundesagentur **v4** endpoint, which was retired server-side (see §4).
 
-### F13 — Weak tests worth strengthening (Phase 0)
+### F13 — Weak tests worth strengthening (Phase 0) — RESOLVED
 
 Most tests are real, but: `test_get_salary_stats` asserts `average is not None`
 and `min <= max` rather than the actual computed values — it would pass against
@@ -227,7 +231,7 @@ gets the same quality treatment for free, and `hasattr` duck-typing disappears.
 
 Each phase is one branch, merged fast-forward, with a changelog entry.
 
-### Phase 0 — Guardrails · *small*
+### Phase 0 — Guardrails · *small* — **DONE**
 
 Refactoring without a gate is refactoring blind. Nothing else starts until this
 lands.
@@ -240,7 +244,7 @@ lands.
   dedup implementations and of report generation, so Phase 2's merge is provably
   intentional rather than accidental.
 
-### Phase 1 — Honesty pass · *small, high value*
+### Phase 1 — Honesty pass · *small, high value* — **DONE**
 
 Make the tool do what its UI claims. Independently useful even if later phases
 slip.
@@ -255,7 +259,7 @@ slip.
 - Replace hand-rolled CSV with the `csv` module (F8).
 - Correct the README and Info tab to describe what exists (F12).
 
-### Phase 2 — Pipeline extraction · *medium*
+### Phase 2 — Pipeline extraction · *medium* — **DONE**
 
 - Introduce `pipeline/`; move dedup, relevance, interleave, and truncation out of
   both scrapers (F5).

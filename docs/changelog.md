@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `src/job_research/pipeline/` — package split into `relevance.py`, `dedup.py`, `filters.py`, `interleave.py`.
+- **Relevance scoring** replaces the single-token match: a title must cover more than half of some search phrase (`RELEVANCE_THRESHOLD`, default 0.6). "Sales Engineer" no longer matches "AI Engineer".
+- **Negative keywords** (`EXCLUDED_KEYWORDS` + a UI field) drop matching titles outright, matched on whole words so "sales" does not reject "Salesforce".
+- `src/job_research/salary.py` — salary parsing with period detection; hourly and monthly pay is annualised (40h x 52 for hourly).
+- `tests/test_relevance.py`, `tests/test_dedup.py`, `tests/test_salary.py`.
 - `src/job_research/pipeline.py` — shared post-fetch stage: salary filter, seniority filter, board interleaving, truncation. Applies to every backend.
 - Salary filtering by range overlap; listings that state no salary are kept, since most German postings omit it.
 - Seniority filtering, inferred from the job title, including German compounds ("Teamleiter", "Abteilungsleitung").
@@ -20,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- **One deduplication rule for every backend.** The two scrapers previously disagreed: Claude keyed on URL alone (so a cross-posted job survived twice) and jobspy on title+company (so the same role in two cities collapsed into one). Now: normalized URL, then title + company + normalized location.
+- Relevance filtering and deduplication moved out of the scrapers into the pipeline, so both apply to every backend.
 - **Salary and seniority now actually filter results.** They previously reached only the cache key, so adjusting them forced a full re-fetch that returned identical listings.
 - Scrapers return the full deduplicated fetch; filtering, interleaving, and truncation moved out of them into `pipeline.apply`.
 - `create_cache_key` takes named fetch inputs (`create_cache_key(backend, **inputs)`) and covers only what the backend actually received. Salary and seniority are out; `max_jobs` and the board list are in, so raising `MAX_JOBS_PER_SEARCH` re-fetches instead of replaying a truncated cached set.
@@ -39,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Config.__repr__` masks `claude_api_key` (`sk-ant-…mPoQAA`), so a traceback, log line, or bug report cannot leak it. Pytest's assertion repr was observed printing the key from a failing test that touched a `Config`.
 
 ### Fixed
+- Salary parsing no longer reads contract hours or a posting year as a salary bound: `"35 Std./Woche, 60.000 €"` was `(35, 60000)`, now `(60000, None)`; `"2026: 70.000 - 95.000 €"` was `(2026, 70000)`, now `(70000, 95000)` (F7).
+- Monthly and hourly pay are annualised instead of being compared against annual bounds (F7).
 - Concurrent searches no longer overwrite each other's parameters (F4): two browser tabs could run each other's query.
 - CSV no longer corrupts fields containing quotes, commas, or newlines (F8).
 - Truncation now happens after filtering, so a filtered search returns up to `MAX_JOBS_PER_SEARCH` results instead of fewer.
