@@ -10,19 +10,19 @@ AI-powered job market research tool for searching and analyzing job listings acr
 
 ## Overview
 
-Job Research Tool aggregates job listings from major German job boards through two independent scraper backends — one powered by Anthropic's Claude API with web search, the other by the python-jobspy library. A quality pipeline handles relevance filtering, deduplication, and salary normalization before results are analyzed and displayed in an interactive Gradio web UI. Searches are cached for 24 hours to minimize API costs on repeated queries.
+Job Research Tool aggregates job listings from German job boards through two independent scraper backends — one powered by Anthropic's Claude API with web search, the other by the python-jobspy library. Results pass through a shared post-fetch pipeline (salary and seniority filtering, board interleaving, truncation) before being analyzed and displayed in an interactive Gradio web UI. Fetches are cached for 24 hours to minimize API costs on repeated queries.
 
 ## Features
 
-- **Dual Scraper Backends**: Claude API web search (`web_search_20250305`) and python-jobspy for broad coverage
-- **Job Board Support**: Indeed.de, LinkedIn, and other German job boards — selectable per search
-- **Quality Pipeline**: Relevance scoring, cross-source deduplication, and salary normalization
-- **Multi-Source Interleaving**: Results from different boards are round-robin mixed for balanced representation
-- **Flexible Filters**: Location, salary range, seniority level, and work type
-- **Data Analysis**: Automatic salary analysis, job distribution, and market insights
+- **Dual Scraper Backends**: Claude API web search (`web_search_20250305`) and python-jobspy — one selected per run via `SCRAPER_BACKEND`
+- **Job Board Support**: Indeed and LinkedIn via jobspy; Indeed, StepStone, LinkedIn, Monster, Honeypot, startup.jobs, and Arbeitsagentur via the Claude backend's `SEARCH_*` toggles
+- **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
+- **Multi-Source Interleaving**: Results from different boards are round-robin mixed before truncation, so one board cannot crowd out the rest
+- **Deduplication**: By URL and by title+company
+- **Data Analysis**: Salary statistics and distribution by board, location, and work type
 - **Multiple Export Formats**: Reports in Markdown or CSV
-- **Smart Caching**: 24h cache reduces API calls for repeated searches
-- **Web Interface**: User-friendly Gradio UI
+- **Smart Caching**: 24h cache keyed only on what the backend actually received, so adjusting salary or seniority re-filters instead of re-fetching
+- **Web Interface**: Gradio UI with live progress and a search log
 
 ## Quick Start
 
@@ -93,24 +93,33 @@ The tool uses a **dual-backend design** to maximize coverage and reliability:
 - **ClaudeScraper** — delegates search to Anthropic's `web_search_20250305` tool. Claude interprets the query, searches the web, and extracts structured job data. High accuracy, API cost per search.
 - **JobSpyScraper** — uses the python-jobspy library to query Indeed, LinkedIn, and other boards directly. Fast and free, but relies on site structure stability.
 
-Both backends produce a common `JobListing` data model (Pydantic). Results pass through a **quality pipeline**:
+Both backends produce a common `JobListing` data model (Pydantic) and return the
+**full deduplicated fetch**, which is what gets cached. Everything that shapes the
+*view* happens afterwards in `pipeline.py`, so it applies to every backend and can
+change without invalidating the cache:
 
-1. **Relevance filtering** — scores each listing against the original query and drops low-relevance noise
-2. **Deduplication** — identifies duplicate listings across sources using title/company/location similarity
-3. **Salary normalization** — standardizes salary formats (annual, monthly, hourly) to comparable ranges
+1. **Salary filter** — keeps listings whose stated range overlaps the requested window. Listings with no stated salary are kept.
+2. **Seniority filter** — infers a level from the job title and keeps matching listings. Heuristic; no board exposes a reliable seniority field.
+3. **Interleave** — round-robins across boards so truncation does not favour whichever board was scraped first.
+4. **Truncate** — cuts to `MAX_JOBS_PER_SEARCH`, last, so filtering never returns fewer results than requested for no reason.
 
 The `JobAnalyzer` then generates summary statistics and a formatted report for the UI.
 
 ```
 Gradio UI → run_job_research()
-               ├── ClaudeScraper.search_jobs()   ─┐
-               └── JobSpyScraper.search_jobs()    ─┤
-                                                   ▼
-                                        Quality Pipeline
-                                        (filter → dedup → normalize)
-                                                   ▼
-                                            JobAnalyzer → Report
+               ├── ClaudeScraper.search_jobs()  ─┐   (cached: full fetch)
+               └── JobSpyScraper.search_jobs()  ─┤
+                                                 ▼
+                                          pipeline.apply()
+                              (salary → seniority → interleave → truncate)
+                                                 ▼
+                                         JobAnalyzer → Report
 ```
+
+Known gaps are tracked in the [architecture review](docs/architecture-review.md):
+relevance filtering currently runs inside the jobspy backend only (F3),
+deduplication is still duplicated across the two scrapers (F5), and salary
+parsing does not yet detect hourly or monthly figures (F7).
 
 ## Project Structure
 
@@ -123,11 +132,14 @@ job-research/
 │   │   ├── scraper.py          # ClaudeScraper (Claude API web search)
 │   │   ├── jobspy_scraper.py   # JobSpyScraper (python-jobspy)
 │   │   ├── boards.py           # Job board definitions and site config
+│   │   ├── pipeline.py         # Post-fetch filtering, interleaving, truncation
 │   │   ├── analyzer.py         # Job analysis and reporting
 │   │   └── utils.py            # Caching, formatting, parsing
 │   └── ui/
 │       └── app.py              # Gradio application + main()
 ├── docs/
+│   ├── architecture-review.md  # Findings and phased refactor plan
+│   ├── decisions/              # Architecture decision records
 │   ├── setup.md                # Detailed setup guide
 │   ├── project-structure.md    # File-by-file breakdown
 │   ├── scraper-design.md       # Scraper architecture decisions
@@ -177,6 +189,8 @@ to assert the new behaviour rather than working around it.
 
 ## Docs
 
+- [Architecture Review & Refactor Plan](docs/architecture-review.md)
+- [Decision Records](docs/decisions/)
 - [Setup Guide](docs/setup.md)
 - [Project Structure](docs/project-structure.md)
 - [Scraper Design](docs/scraper-design.md)

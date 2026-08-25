@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `src/job_research/pipeline.py` — shared post-fetch stage: salary filter, seniority filter, board interleaving, truncation. Applies to every backend.
+- Salary filtering by range overlap; listings that state no salary are kept, since most German postings omit it.
+- Seniority filtering, inferred from the job title, including German compounds ("Teamleiter", "Abteilungsleitung").
+- `tests/test_pipeline.py` and `tests/test_app.py` — including a deterministic regression test for concurrent searches sharing parameters.
 - GitHub Actions CI (`.github/workflows/ci.yml`) — ruff, black, mypy, and pytest on every push and pull request.
 - `tests/test_characterization.py` — 23 tests pinning current behaviour ahead of the planned refactors, including known-wrong behaviour marked `test_characterizes_*`.
 - `.git-blame-ignore-revs` so the bulk black reformatting commit does not obscure `git blame`.
@@ -16,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- **Salary and seniority now actually filter results.** They previously reached only the cache key, so adjusting them forced a full re-fetch that returned identical listings.
+- Scrapers return the full deduplicated fetch; filtering, interleaving, and truncation moved out of them into `pipeline.apply`.
+- `create_cache_key` takes named fetch inputs (`create_cache_key(backend, **inputs)`) and covers only what the backend actually received. Salary and seniority are out; `max_jobs` and the board list are in, so raising `MAX_JOBS_PER_SEARCH` re-fetches instead of replaying a truncated cached set.
+- `run_job_research` builds per-request `JobSearchParams` instead of mutating the module-level config.
+- CSV output is written with the stdlib `csv` module.
+- Status line distinguishes fetched, matched, and shown counts.
+- README and the UI's Info tab describe the pipeline that exists, not an aspirational one.
 - Version is single-sourced from package metadata via `importlib.metadata`; `__init__.py` no longer hardcodes it (was stale at 0.1.0).
 - Whole codebase formatted with black so the CI format gate is enforceable.
 - Analyzer tests assert exact values instead of `is not None` / `min <= max`.
@@ -25,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CSV output wrapped in a code fence for proper Markdown display.
 
 ### Fixed
+- Concurrent searches no longer overwrite each other's parameters (F4): two browser tabs could run each other's query.
+- CSV no longer corrupts fields containing quotes, commas, or newlines (F8).
+- Truncation now happens after filtering, so a filtered search returns up to `MAX_JOBS_PER_SEARCH` results instead of fewer.
+- `hasattr`/`getattr` duck-typing on scraper internals removed from `app.py`; both backends now satisfy the `JobScraper` protocol unchanged (F5, F10).
 - `_safe_int` in `jobspy_scraper.py` now narrows on `SupportsFloat`; narrowing on `(int, float)` would have dropped every salary from an all-integer pandas column, since `numpy.int64` subclasses neither.
 - All 8 mypy errors resolved; `uv run mypy src/` is clean.
 

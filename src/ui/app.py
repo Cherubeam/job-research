@@ -270,35 +270,41 @@ def create_ui() -> gr.Blocks:
                     """
                 ## About This Tool
 
-                This tool searches for AI/ML jobs across major German job boards using the
-                **Anthropic Claude API** with the `web_search_20250305` tool.
+                Searches German job boards for AI/ML roles through one of two
+                backends, selected with `SCRAPER_BACKEND` in your `.env`.
 
-                ### Setup Required
-                Set `CLAUDE_API_KEY` in your `.env` file before searching.
+                ### Backends
+                - **`jobspy`** — queries Indeed and LinkedIn directly via
+                  python-jobspy. No API key needed.
+                - **`claude`** — uses the Anthropic Claude API with the
+                  `web_search_20250305` tool, restricted to the boards enabled by
+                  the `SEARCH_*` variables. Requires `CLAUDE_API_KEY`. Costs money
+                  per search.
 
-                ### Features
-                - Search across multiple job boards (StepStone, LinkedIn, Indeed, XING, etc.)
-                - Filter by location, salary, seniority, and work type
-                - Generate reports in Markdown or CSV format
-                - Download results as files for offline use
-                - Salary analysis and market insights
-                - Smart caching (24h) to reduce API costs
+                ### How filters are applied
+                - **Location** and **work type** are passed to the backend and
+                  shape what gets fetched.
+                - **Salary** is applied locally, by overlap. Listings that state
+                  no salary are kept — most German postings omit it, and dropping
+                  them would discard the majority of real results.
+                - **Seniority** is applied locally and inferred from the job
+                  title (for example "Senior", "Junior", "Werkstudent",
+                  "Teamleiter"). Job boards expose no reliable seniority field, so
+                  this is a heuristic.
 
-                ### Job Boards Searched
-                - StepStone.de
-                - Indeed.de
-                - LinkedIn
-                - XING
-                - Monster.de
-                - Honeypot.io
-                - Startup.jobs
-                - Arbeitsagentur.de
+                Because salary and seniority are applied after the fetch, changing
+                them re-filters the cached results instead of re-running the search.
+
+                ### Caching
+                Fetches are cached for 24h, keyed only on what the backend
+                actually received. The cached set is the full unfiltered fetch.
 
                 ### Tips
-                1. Use broad keywords first to see the market landscape
-                2. Filter by location and work type to narrow down results
-                3. Export results to CSV for further analysis in Excel/Sheets
-                4. Repeated searches with the same parameters use cached results
+                1. Start broad, then narrow with salary and seniority — those are
+                   free to adjust once a search has been cached.
+                2. Export to CSV for further analysis in Excel or Sheets.
+                3. Raise `MAX_JOBS_PER_SEARCH` if the status line reports that
+                   results were truncated.
                 """
                 )
 
