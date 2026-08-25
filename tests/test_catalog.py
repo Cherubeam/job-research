@@ -29,17 +29,16 @@ def test_claude_capable_sources_declare_a_search_hint():
         assert source.search_hint, f"{source.id} has no search hint for the Claude prompt"
 
 
-def test_defaults_are_reachable_by_both_backends():
-    """A default-on source must work whichever backend is configured."""
-    for source_id in catalog.DEFAULT_ENABLED:
-        source = catalog.get(source_id)
-        assert source.supports(Backend.CLAUDE)
-        assert source.supports(Backend.JOBSPY)
+def test_every_backend_can_reach_at_least_one_default_source():
+    """Whichever backend is configured, a default run must have something to search."""
+    for backend in Backend:
+        resolved = catalog.resolve(sorted(catalog.DEFAULT_ENABLED), backend)
+        assert resolved, f"{backend.value} has no default-on source it can reach"
 
 
-def test_indeed_is_the_only_default_on_source():
-    """ADR-002: LinkedIn is opt-in, so a default run scrapes nothing that forbids it."""
-    assert catalog.DEFAULT_ENABLED == frozenset({"indeed"})
+def test_default_on_sources():
+    """Indeed and Arbeitsagentur. LinkedIn stays opt-in per ADR-002."""
+    assert catalog.DEFAULT_ENABLED == frozenset({"indeed", "arbeitsagentur"})
 
 
 def test_linkedin_is_off_by_default_and_carries_its_caveat():
@@ -48,10 +47,10 @@ def test_linkedin_is_off_by_default_and_carries_its_caveat():
     assert "002-linkedin-scraping" in source.caveat
 
 
-def test_arbeitsagentur_is_off_by_default_and_carries_its_caveat():
-    """Required by docs/decisions/001-bundesagentur-terms-of-use.md."""
+def test_arbeitsagentur_still_carries_its_caveat_though_enabled():
+    """ADR-001 amendment: on by default, but the caveat must stay visible."""
     source = catalog.get("arbeitsagentur")
-    assert not source.default_enabled
+    assert source.default_enabled
     assert "001-bundesagentur-terms-of-use" in source.caveat
 
 

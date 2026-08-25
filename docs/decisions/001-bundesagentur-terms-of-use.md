@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted — 2026-08-25. Integration is opt-in and disabled by default.
+Accepted — 2026-08-25. **Amended the same day**: constraint 1 (off by default)
+was reversed by the risk owner once the integration was working. See
+[Amendment](#amendment-2026-08-25--enabled-by-default) at the end. All other
+constraints stand.
 
 ## Context
 
@@ -50,8 +53,9 @@ documented where a user will actually see it.**
 
 Binding constraints:
 
-1. **Off by default.** The source registry entry ships disabled. Enabling it is a
-   deliberate act by the person running the tool.
+1. ~~**Off by default.** The source registry entry ships disabled. Enabling it is
+   a deliberate act by the person running the tool.~~ *(Reversed — see the
+   amendment below. The caveat still renders next to the source in the UI.)*
 2. **No bulk enumeration.** The client fetches a bounded result page for an
    explicit user-initiated search. No crawling of the full board, no scheduled
    sweeps, no pagination-to-exhaustion.
@@ -109,3 +113,28 @@ structured data.
   `docs/jobsuche-spike-findings-2026-06-22.md`
 - BA terms of use: https://www.arbeitsagentur.de/en/terms-of-use
 - Community API documentation: https://jobsuche.api.bund.dev/
+
+
+## Amendment (2026-08-25) — enabled by default
+
+**Change:** `arbeitsagentur` ships with `default_enabled=True`, alongside Indeed.
+Constraints 2–5 (no bulk enumeration, caveat surfaced, personal-use framing,
+swappable by construction) are unchanged and still enforced by tests.
+
+**Why:** the risk owner decided that for this tool's actual use — one person
+searching for jobs to apply to, at a handful of queries a day — the federal job
+board is the single most useful German source, and requiring an opt-in for it
+made the default configuration worse without meaningfully changing the exposure.
+The `MAX_PAGES` ceiling and the absence of any scheduled path already bound the
+volume far below anything resembling data collection.
+
+**What this does not change:** the endpoint is still unofficial, BA's terms still
+restrict automated read-out, and the caveat still renders next to the source in
+the UI so the person running it sees the situation. The original reasoning for
+opt-in — that this is a public repository and others may run it at volumes we do
+not control — remains true and is recorded here rather than deleted. Anyone
+forking this should make their own call; `ENABLED_SOURCES` is how you make it.
+
+**Revisit if:** the project grows an unattended or scheduled mode, at which point
+recurring automated fetches become a different posture than user-initiated
+search, and this decision should be re-taken rather than inherited.

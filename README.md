@@ -82,7 +82,7 @@ CLAUDE_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 MAX_JOBS_PER_SEARCH=200        # max results to show (default 200)
 INTERLEAVE_SITES=true          # mix results from different job boards
-ENABLED_SOURCES=indeed         # which boards to search
+ENABLED_SOURCES=indeed,arbeitsagentur  # which boards to search
 EXCLUDED_KEYWORDS=             # drop titles containing these (comma-separated)
 RELEVANCE_THRESHOLD=0.6        # phrase coverage a title must reach to be kept
 POSTED_WITHIN_DAYS=            # only listings newer than N days (empty = no limit)
@@ -138,7 +138,7 @@ Gradio UI → run_job_research()
 | Monster.de | yes | — | off |
 | Honeypot.io | yes | — | off |
 | startup.jobs | yes | — | off |
-| Arbeitsagentur.de | yes | — | off — see [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) |
+| Arbeitsagentur.de | yes | — | **on** — see [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) |
 
 (The `bundesagentur` backend serves Arbeitsagentur.de through its own API rather
 than the two columns above.)

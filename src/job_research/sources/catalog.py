@@ -125,11 +125,12 @@ _SOURCES: tuple[Source, ...] = (
         label="Arbeitsagentur.de",
         domain="arbeitsagentur.de",
         backends=frozenset({Backend.CLAUDE, Backend.BUNDESAGENTUR}),
+        default_enabled=True,
         job_url_pattern=re.compile(r"arbeitsagentur\.de/"),
         search_hint="For Arbeitsagentur: any arbeitsagentur.de URL with a path is acceptable.",
         caveat=(
-            "Federal job board. Off by default — see docs/decisions/"
-            "001-bundesagentur-terms-of-use.md before enabling."
+            "Unofficial endpoint; BA's terms restrict automated read-out. On by "
+            "operator decision — see docs/decisions/001-bundesagentur-terms-of-use.md."
         ),
     ),
 )
