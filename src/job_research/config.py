@@ -9,6 +9,11 @@ from dotenv import load_dotenv
 import os
 
 
+def _split_list(raw: str) -> list[str]:
+    """Parse a comma-separated env var into a list, dropping blanks."""
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 class SeniorityLevel(str, Enum):
     """Job seniority levels"""
 
@@ -66,6 +71,10 @@ class JobSearchParams:
     salary_maximum: int = 200000
     currency: str = "EUR"
     industries: list[str] = field(default_factory=lambda: ["All"])
+    excluded_keywords: list[str] = field(default_factory=list)
+    """Titles containing any of these phrases are dropped outright."""
+    relevance_threshold: float = 0.6
+    """Fraction of a search phrase a title must cover to be kept. See pipeline.relevance."""
 
 
 @dataclass
@@ -136,6 +145,8 @@ class Config:
             seniority_level=SeniorityLevel(os.getenv("SENIORITY_LEVELS", "All levels")),
             salary_minimum=int(os.getenv("SALARY_MINIMUM", "50000")),
             salary_maximum=int(os.getenv("SALARY_MAXIMUM", "200000")),
+            excluded_keywords=_split_list(os.getenv("EXCLUDED_KEYWORDS", "")),
+            relevance_threshold=float(os.getenv("RELEVANCE_THRESHOLD", "0.6")),
         )
 
         job_boards = JobBoardConfig(
@@ -212,6 +223,8 @@ class Config:
                 "salary_minimum": self.search_params.salary_minimum,
                 "salary_maximum": self.search_params.salary_maximum,
                 "industries": self.search_params.industries,
+                "excluded_keywords": self.search_params.excluded_keywords,
+                "relevance_threshold": self.search_params.relevance_threshold,
             },
             "job_boards": {
                 "search_stepstone": self.job_boards.search_stepstone,

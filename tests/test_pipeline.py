@@ -162,9 +162,9 @@ def _params(**kwargs) -> JobSearchParams:
 
 def test_apply_reports_fetched_matched_and_shown_counts():
     listings = [
-        _listing("Senior AI Engineer", job_board="Indeed"),
-        _listing("Senior ML Engineer", job_board="Indeed"),
-        _listing("Junior AI Engineer", job_board="Indeed"),
+        _listing("Senior AI Engineer", company="A", job_board="Indeed"),
+        _listing("Senior ML Engineer", company="B", job_board="Indeed"),
+        _listing("Junior AI Engineer", company="C", job_board="Indeed"),
     ]
     result = pipeline.apply(listings, _params(seniority_level=SeniorityLevel.SENIOR), max_jobs=1)
     assert result.fetched == 3
@@ -176,9 +176,9 @@ def test_apply_reports_fetched_matched_and_shown_counts():
 def test_apply_filters_before_truncating():
     """Truncating first would return one listing where two match."""
     listings = [
-        _listing("Junior AI Engineer", job_board="Indeed"),
-        _listing("Senior AI Engineer", job_board="Indeed"),
-        _listing("Senior ML Engineer", job_board="Indeed"),
+        _listing("Junior AI Engineer", company="A", job_board="Indeed"),
+        _listing("Senior AI Engineer", company="B", job_board="Indeed"),
+        _listing("Senior ML Engineer", company="C", job_board="Indeed"),
     ]
     result = pipeline.apply(listings, _params(seniority_level=SeniorityLevel.SENIOR), max_jobs=2)
     assert [lst.title for lst in result.listings] == [
@@ -190,20 +190,20 @@ def test_apply_filters_before_truncating():
 
 def test_apply_without_interleaving_preserves_scraper_order():
     listings = [
-        _listing("A", job_board="Indeed"),
-        _listing("B", job_board="Indeed"),
-        _listing("C", job_board="LinkedIn"),
+        _listing("AI Engineer", company="A", job_board="Indeed"),
+        _listing("AI Engineer", company="B", job_board="Indeed"),
+        _listing("AI Engineer", company="C", job_board="LinkedIn"),
     ]
     result = pipeline.apply(listings, _params(), max_jobs=10, interleave=False)
-    assert [lst.title for lst in result.listings] == ["A", "B", "C"]
+    assert [lst.company for lst in result.listings] == ["A", "B", "C"]
 
 
 def test_apply_interleaves_before_truncating():
     """Truncation without interleaving would return only the first board."""
     listings = [
-        _listing("A1", job_board="Indeed"),
-        _listing("A2", job_board="Indeed"),
-        _listing("B1", job_board="LinkedIn"),
+        _listing("AI Engineer", company="A1", job_board="Indeed"),
+        _listing("AI Engineer", company="A2", job_board="Indeed"),
+        _listing("AI Engineer", company="B1", job_board="LinkedIn"),
     ]
     result = pipeline.apply(listings, _params(), max_jobs=2, interleave=True)
     assert [lst.job_board for lst in result.listings] == ["Indeed", "LinkedIn"]

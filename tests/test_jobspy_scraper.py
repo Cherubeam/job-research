@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams, SeniorityLevel, WorkType
 from job_research.jobspy_scraper import JobSpyScraper
 
@@ -235,71 +234,6 @@ class TestWorkTypeFromRow:
         assert scraper._map_work_type_from_row(row) == ""
 
 
-class TestRelevanceFiltering:
-    """Tests title relevance filtering."""
-
-    def test_relevant_title_matches(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Machine Learning Engineer"])
-        assert JobSpyScraper._is_relevant("Senior AI Engineer (m/w/d)", tokens)
-
-    def test_irrelevant_title_rejected(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Machine Learning Engineer"])
-        assert not JobSpyScraper._is_relevant(
-            "Shopify API GraphQL - Senior Backend Developer", tokens
-        )
-
-    def test_alternative_title_matches(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens(
-            "AI Engineer", ["Machine Learning Engineer", "Deep Learning Engineer"]
-        )
-        assert JobSpyScraper._is_relevant("Deep Learning Researcher", tokens)
-
-    def test_case_insensitive(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", [])
-        assert JobSpyScraper._is_relevant("ai engineer", tokens)
-
-    def test_stopword_only_title_rejected(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("Senior Engineer", [])
-        # "Senior" is a stopword, so only "engineer" is a keyword token
-        assert JobSpyScraper._is_relevant("Software Engineer", tokens)
-        assert not JobSpyScraper._is_relevant("Senior Manager", tokens)
-
-    def test_data_scientist_matches_data(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Data Scientist"])
-        assert JobSpyScraper._is_relevant("Data Scientist", tokens)
-
-    @patch("job_research.jobspy_scraper.scrape_jobs")
-    def test_filters_irrelevant_titles_in_scrape(self, mock_scrape, scraper: JobSpyScraper) -> None:
-        df = pd.DataFrame(
-            {
-                "site": ["indeed", "indeed", "indeed"],
-                "title": ["AI Engineer", "Shopify Backend Developer", "ML Engineer"],
-                "company": ["A", "B", "C"],
-                "location": ["Berlin", "Berlin", "Berlin"],
-                "min_amount": [np.nan, np.nan, np.nan],
-                "max_amount": [np.nan, np.nan, np.nan],
-                "job_url": ["https://a.com/1", "https://b.com/2", "https://c.com/3"],
-                "description": ["d1", "d2", "d3"],
-                "date_posted": [np.nan, np.nan, np.nan],
-                "is_remote": [False, False, False],
-                "job_type": [np.nan, np.nan, np.nan],
-            }
-        )
-        mock_scrape.return_value = df
-        params = JobSearchParams(
-            keywords="AI Engineer",
-            location="Berlin",
-            job_title_alternatives=["ML Engineer"],
-        )
-
-        listings = scraper._scrape(params)
-
-        titles = [lst.title for lst in listings]
-        assert "AI Engineer" in titles
-        assert "ML Engineer" in titles
-        assert "Shopify Backend Developer" not in titles
-
-
 class TestScrape:
     """Tests the _scrape method end-to-end (mocked jobspy)."""
 
@@ -469,66 +403,6 @@ class TestSearchJobsCache:
         assert mock_scrape.call_count == 2
 
 
-class TestDeduplication:
-    """Tests the deduplication logic."""
-
-    def test_dedup_by_url(self, scraper: JobSpyScraper) -> None:
-        listings = [
-            JobListing(title="AI Engineer", company="A", job_url="https://example.com/1"),
-            JobListing(title="AI Engineer v2", company="B", job_url="https://example.com/1"),
-            JobListing(title="ML Engineer", company="C", job_url="https://example.com/2"),
-        ]
-
-        result = scraper._deduplicate(listings)
-
-        assert len(result) == 2
-
-    def test_dedup_same_title_company_different_urls(self, scraper: JobSpyScraper) -> None:
-        """Amazon-style: same job posted in different locations with different URLs."""
-        listings = [
-            JobListing(
-                title="2026 Software Dev Engineer Intern",
-                company="Amazon",
-                job_url="https://indeed.com/viewjob?jk=aaa",
-                location="Berlin",
-            ),
-            JobListing(
-                title="2026 Software Dev Engineer Intern",
-                company="Amazon",
-                job_url="https://indeed.com/viewjob?jk=bbb",
-                location="Munich",
-            ),
-            JobListing(
-                title="2026 Software Dev Engineer Intern",
-                company="Amazon",
-                job_url="https://indeed.com/viewjob?jk=ccc",
-                location="Dresden",
-            ),
-            JobListing(
-                title="ML Engineer",
-                company="Other Corp",
-                job_url="https://indeed.com/viewjob?jk=ddd",
-            ),
-        ]
-
-        result = scraper._deduplicate(listings)
-
-        assert len(result) == 2
-        assert result[0].title == "2026 Software Dev Engineer Intern"
-        assert result[1].title == "ML Engineer"
-
-    def test_dedup_by_title_company_when_no_url(self, scraper: JobSpyScraper) -> None:
-        listings = [
-            JobListing(title="AI Engineer", company="TechCorp"),
-            JobListing(title="AI Engineer", company="TechCorp"),
-            JobListing(title="AI Engineer", company="OtherCorp"),
-        ]
-
-        result = scraper._deduplicate(listings)
-
-        assert len(result) == 2
-
-
 class TestWorkTypeMapping:
     """Tests _map_work_type edge cases."""
 
@@ -548,22 +422,3 @@ class TestWorkTypeMapping:
         params = JobSearchParams(work_type=WorkType.ONSITE)
         job_type, is_remote = scraper._map_work_type(params)
         assert is_remote is False
-
-
-class TestBuildKeywordTokens:
-    """Tests keyword tokenization."""
-
-    def test_basic_tokenization(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", [])
-        assert "ai" in tokens
-        assert "engineer" in tokens
-
-    def test_includes_alternatives(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("AI Engineer", ["Machine Learning Engineer"])
-        assert "machine" in tokens
-        assert "learning" in tokens
-
-    def test_excludes_stopwords(self) -> None:
-        tokens = JobSpyScraper._build_keyword_tokens("Senior AI Engineer", [])
-        assert "senior" not in tokens
-        assert "ai" in tokens

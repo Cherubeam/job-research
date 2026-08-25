@@ -2,12 +2,13 @@
 
 import csv
 import io
-import re
 import statistics
 from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, field_validator, model_validator
+
+from job_research.salary import parse_salary_range
 
 
 class JobListing(BaseModel):
@@ -41,7 +42,7 @@ class JobListing(BaseModel):
         raw_max = data.get("salary_max")
         if isinstance(raw_min, str) or isinstance(raw_max, str):
             combined = f"{raw_min or ''} {raw_max or ''}".strip()
-            data["salary_min"], data["salary_max"] = _parse_salary_range(combined)
+            data["salary_min"], data["salary_max"] = parse_salary_range(combined)
         else:
             data["salary_min"] = _coerce_salary(raw_min)
             data["salary_max"] = _coerce_salary(raw_max)
@@ -63,29 +64,6 @@ def _coerce_salary(v: object) -> Optional[int]:
     if isinstance(v, float):
         return int(v)
     return None
-
-
-def _parse_salary_range(salary_str: str) -> tuple[Optional[int], Optional[int]]:
-    """Parse a salary string into (min, max). Handles European formats, k-notation."""
-    if not salary_str or not salary_str.strip():
-        return None, None
-
-    salary_str = re.sub(r"(\d+)\s*[kK]", lambda m: str(int(m.group(1)) * 1000), salary_str)
-
-    cleaned = re.sub(r"[€$£]", "", salary_str)
-    cleaned = re.sub(r"(\d)\.(\d{3})(?!\d)", r"\1\2", cleaned)
-    cleaned = cleaned.replace(",", "")
-
-    numbers = re.findall(r"\d+", cleaned)
-    if not numbers:
-        return None, None
-
-    try:
-        if len(numbers) >= 2:
-            return int(numbers[0]), int(numbers[1])
-        return int(numbers[0]), None
-    except ValueError:
-        return None, None
 
 
 class JobAnalyzer:

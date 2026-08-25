@@ -1,7 +1,6 @@
 """Job scraper using python-jobspy (Indeed + LinkedIn, no API key needed)."""
 
 import logging
-import re
 from collections import Counter
 from pathlib import Path
 from typing import Optional, SupportsFloat
@@ -15,35 +14,6 @@ from job_research.config import JobSearchParams, WorkType
 from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
-
-_TITLE_STOPWORDS = frozenset(
-    {
-        "senior",
-        "junior",
-        "lead",
-        "staff",
-        "principal",
-        "head",
-        "m/w/d",
-        "f/m/d",
-        "w/m/d",
-        "gn",
-        "d",
-        "m",
-        "f",
-        "w",
-        "in",
-        "und",
-        "and",
-        "the",
-        "for",
-        "of",
-        "de",
-        "der",
-        "die",
-        "das",
-    }
-)
 
 # Boards python-jobspy reaches for this project. Phase 3 derives this from the
 # source registry instead of hardcoding it (see F2 in the architecture review).
@@ -95,11 +65,6 @@ class JobSpyScraper:
             return [JobListing(**item) for item in cached]
 
         listings = self._scrape(params)
-
-        before_dedup = len(listings)
-        listings = self._deduplicate(listings)
-        if before_dedup != len(listings):
-            logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
 
         if not listings:
             raise RuntimeError(
@@ -168,29 +133,13 @@ class JobSpyScraper:
         df["site"] = pd.Categorical(df["site"], categories=site_order, ordered=True)
         df = df.sort_values("site").reset_index(drop=True)
 
-        keyword_tokens = self._build_keyword_tokens(params.keywords, params.job_title_alternatives)
-
         listings: list[JobListing] = []
-        skipped_irrelevant = 0
         for _, row in df.iterrows():
             listing = self._to_job_listing(row)
-            if listing is None:
-                continue
-            if not self._is_relevant(listing.title, keyword_tokens):
-                skipped_irrelevant += 1
-                logger.debug("Skipped irrelevant: %s", listing.title)
-                continue
-            listings.append(listing)
+            if listing is not None:
+                listings.append(listing)
 
-        if skipped_irrelevant:
-            logger.info(
-                "Filtered %d irrelevant titles, kept %d/%d",
-                skipped_irrelevant,
-                len(listings),
-                len(df),
-            )
-        else:
-            logger.info("Converted %d/%d rows to JobListing", len(listings), len(df))
+        logger.info("Converted %d/%d rows to JobListing", len(listings), len(df))
         return listings
 
     def _map_work_type(self, params: JobSearchParams) -> tuple[Optional[str], Optional[bool]]:
@@ -201,28 +150,6 @@ class JobSpyScraper:
             return None, False
         # HYBRID and ANY — don't restrict
         return None, None
-
-    @staticmethod
-    def _build_keyword_tokens(keywords: str, alternatives: list[str]) -> set[str]:
-        """Build a set of meaningful tokens from keywords and alternatives."""
-        all_text = [keywords] + alternatives
-        tokens: set[str] = set()
-        for phrase in all_text:
-            for word in re.split(r"[\s/,;()\-]+", phrase.lower()):
-                word = word.strip()
-                if word and word not in _TITLE_STOPWORDS:
-                    tokens.add(word)
-        return tokens
-
-    @staticmethod
-    def _is_relevant(title: str, keyword_tokens: set[str]) -> bool:
-        """Check if a job title shares at least one meaningful token with keywords."""
-        title_tokens = {
-            w.strip()
-            for w in re.split(r"[\s/,;()\-]+", title.lower())
-            if w.strip() and w.strip() not in _TITLE_STOPWORDS
-        }
-        return bool(title_tokens & keyword_tokens)
 
     @staticmethod
     def _map_work_type_from_row(row: pd.Series) -> str:
@@ -280,25 +207,3 @@ class JobSpyScraper:
         except ValidationError:
             logger.info("Skipped invalid row: %.100s", title)
             return None
-
-    @staticmethod
-    def _deduplicate(listings: list[JobListing]) -> list[JobListing]:
-        """Remove duplicate listings by URL and by title+company."""
-        seen_urls: set[str] = set()
-        seen_keys: set[str] = set()
-        result: list[JobListing] = []
-        for listing in listings:
-            # Always check title+company
-            key = f"{listing.title.lower()}|{listing.company.lower()}"
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-
-            # Also check URL if present
-            if listing.job_url and listing.job_url.strip():
-                if listing.job_url in seen_urls:
-                    continue
-                seen_urls.add(listing.job_url)
-
-            result.append(listing)
-        return result

@@ -12,84 +12,48 @@ the test to assert it. Do not patch around the failure.
 
 import csv
 import io
-from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
-from job_research.analyzer import JobAnalyzer, JobListing, _parse_salary_range
+from job_research.analyzer import JobAnalyzer, JobListing
 from job_research.jobspy_scraper import JobSpyScraper
-from job_research.scraper import ClaudeScraper
+from job_research.pipeline import deduplicate
+from job_research.salary import parse_salary_range
 
 
-@pytest.fixture
-def claude_scraper() -> ClaudeScraper:
-    with patch("job_research.scraper.anthropic.Anthropic"):
-        return ClaudeScraper(api_key="sk-test", model="claude-haiku-4-5-20251001", max_jobs=10)
-
-
-@pytest.fixture
-def jobspy_scraper() -> JobSpyScraper:
-    return JobSpyScraper(max_jobs=20, country="Germany")
-
-
-# --------------------------------------------------------------- dedup divergence
+# ------------------------------------------------------------------------ dedup
 #
-# F5: the two backends disagree about what a duplicate is. Phase 2 replaces both
-# with a single implementation, so these tests pin exactly where they differ.
-#
-#   ClaudeScraper : URL present -> key on URL ALONE (title+company ignored)
-#                   URL absent  -> key on title+company
-#   JobSpyScraper : ALWAYS key on title+company, and ADDITIONALLY on URL
+# F5 (FIXED in Phase 2): the two backends had different dedup rules. There is
+# now one implementation in `pipeline.dedup` and these pin its contract.
 
 
-def _pair_same_job_different_urls() -> list[JobListing]:
-    """The discriminating case: one job, cross-posted under two URLs."""
-    return [
-        JobListing(title="AI Engineer", company="Acme", job_url="https://a.example/1"),
-        JobListing(title="AI Engineer", company="Acme", job_url="https://b.example/2"),
+def test_dedup_collapses_the_same_job_cross_posted_under_two_urls():
+    """The case the two old implementations disagreed on."""
+    listings = [
+        JobListing(title="AI Engineer", company="Acme", location="Berlin", job_url="https://a/1"),
+        JobListing(title="AI Engineer", company="Acme", location="Berlin", job_url="https://b/2"),
     ]
-
-
-def test_characterizes_claude_dedup_keeps_same_job_under_two_urls(claude_scraper):
-    """F5: Claude keys on URL alone, so a cross-posted job survives twice."""
-    result = claude_scraper._deduplicate_listings(_pair_same_job_different_urls())
-    assert len(result) == 2
-
-
-def test_characterizes_jobspy_dedup_collapses_same_job_under_two_urls(jobspy_scraper):
-    """F5: JobSpy keys on title+company, so the same job collapses to one."""
-    result = jobspy_scraper._deduplicate(_pair_same_job_different_urls())
+    result = deduplicate(listings)
     assert len(result) == 1
-    assert result[0].job_url == "https://a.example/1"  # first wins
+    assert result[0].job_url == "https://a/1"  # first occurrence wins
 
 
-@pytest.mark.parametrize("backend", ["claude", "jobspy"])
-def test_both_dedups_collapse_identical_urls(backend, claude_scraper, jobspy_scraper):
-    """Where they agree: same URL is always a duplicate, whatever the title says."""
+def test_dedup_collapses_identical_urls_whatever_the_title_says():
     listings = [
-        JobListing(title="AI Engineer", company="Acme", job_url="https://a.example/1"),
-        JobListing(title="Different Title", company="Other", job_url="https://a.example/1"),
+        JobListing(title="AI Engineer", company="Acme", job_url="https://a/1"),
+        JobListing(title="Different Title", company="Other", job_url="https://a/1"),
     ]
-    dedup = (
-        claude_scraper._deduplicate_listings if backend == "claude" else jobspy_scraper._deduplicate
-    )
-    assert len(dedup(listings)) == 1
+    assert len(deduplicate(listings)) == 1
 
 
-@pytest.mark.parametrize("backend", ["claude", "jobspy"])
-def test_both_dedups_collapse_title_company_when_url_missing(
-    backend, claude_scraper, jobspy_scraper
-):
-    """Where they agree: with no URL, title+company is the key."""
+def test_dedup_keeps_the_same_role_in_different_cities():
+    """Two cities is two jobs — the old jobspy rule collapsed these."""
     listings = [
-        JobListing(title="AI Engineer", company="Acme"),
-        JobListing(title="ai engineer", company="ACME"),  # case-insensitive
+        JobListing(title="AI Engineer", company="Acme", location="Berlin", job_url="https://a/1"),
+        JobListing(title="AI Engineer", company="Acme", location="Munich", job_url="https://a/2"),
     ]
-    dedup = (
-        claude_scraper._deduplicate_listings if backend == "claude" else jobspy_scraper._deduplicate
-    )
-    assert len(dedup(listings)) == 1
+    assert len(deduplicate(listings)) == 2
 
 
 # ------------------------------------------------------------------ salary parsing
@@ -111,21 +75,21 @@ def test_both_dedups_collapse_title_company_when_url_missing(
     ],
 )
 def test_parse_salary_range_handles_common_formats(raw, expected):
-    assert _parse_salary_range(raw) == expected
+    assert parse_salary_range(raw) == expected
 
 
 @pytest.mark.parametrize(
-    ("raw", "current_result", "why_wrong"),
+    ("raw", "expected", "why"),
     [
-        ("35 Std./Woche, 60.000 €", (35, 60000), "hours/week read as the lower bound"),
-        ("5.000 € pro Monat", (5000, None), "monthly figure not annualised"),
-        ("25 € / Stunde", (25, None), "hourly figure not annualised"),
-        ("2026: 70.000 - 95.000 €", (2026, 70000), "leading year read as the lower bound"),
+        ("35 Std./Woche, 60.000 €", (60000, None), "contract hours are not a salary bound"),
+        ("5.000 € pro Monat", (60000, None), "monthly figure annualised"),
+        ("25 € / Stunde", (52000, None), "hourly figure annualised"),
+        ("2026: 70.000 - 95.000 €", (70000, 95000), "a posting year is not a salary bound"),
     ],
 )
-def test_characterizes_salary_parsing_without_unit_detection(raw, current_result, why_wrong):
-    """F7: first-two-integers parsing misreads these. Phase 2 should fix them."""
-    assert _parse_salary_range(raw) == current_result, why_wrong
+def test_salary_parsing_detects_period_and_rejects_non_salary_figures(raw, expected, why):
+    """F7 (FIXED in Phase 2): these four all parsed wrong before period detection."""
+    assert parse_salary_range(raw) == expected, why
 
 
 # --------------------------------------------------------------------- CSV output
@@ -201,7 +165,8 @@ def test_csv_round_trips_ordinary_fields():
 
 
 @pytest.mark.parametrize("dtype", ["int64", "float64", "object"])
-def test_salary_survives_every_pandas_dtype(jobspy_scraper, dtype):
+def test_salary_survives_every_pandas_dtype(dtype):
+    jobspy_scraper = JobSpyScraper(max_jobs=20, country="Germany")
     row = pd.DataFrame(
         {
             "title": ["AI Engineer"],

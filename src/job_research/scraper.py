@@ -96,11 +96,6 @@ class ClaudeScraper:
         listings, total_items = self._search_and_extract(query)
         logger.info("Extracted %d listings from %d items", len(listings), total_items)
 
-        before_dedup = len(listings)
-        listings = self._deduplicate_listings(listings)
-        if before_dedup != len(listings):
-            logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
-
         if not listings:
             if total_items == 0:
                 raise RuntimeError(
@@ -355,20 +350,3 @@ class ClaudeScraper:
         listings = self._validate_listing_urls(listings, search_urls, self._boards)
 
         return listings, len(data)
-
-    def _deduplicate_listings(self, listings: list[JobListing]) -> list[JobListing]:
-        seen_urls: set[str] = set()
-        seen_keys: set[str] = set()
-        result = []
-        for listing in listings:
-            if listing.job_url and listing.job_url.strip():
-                if listing.job_url in seen_urls:
-                    continue
-                seen_urls.add(listing.job_url)
-            else:
-                key = f"{listing.title.lower()}|{listing.company.lower()}"
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-            result.append(listing)
-        return result

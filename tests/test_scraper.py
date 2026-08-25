@@ -119,29 +119,6 @@ def test_salary_coercion_from_strings(salary_str_min, salary_str_max, expected_m
 # --------------------------------------------------------------- deduplication
 
 
-def test_deduplicate_by_url(scraper):
-    listings = [
-        JobListing(title="AI Eng", company="A", location="Berlin", job_url="https://example.com/1"),
-        JobListing(title="AI Eng", company="A", location="Berlin", job_url="https://example.com/1"),
-        JobListing(title="ML Eng", company="B", location="Munich", job_url="https://example.com/2"),
-    ]
-    result = scraper._deduplicate_listings(listings)
-    assert len(result) == 2
-
-
-def test_deduplicate_by_title_company(scraper):
-    listings = [
-        JobListing(title="AI Engineer", company="TechCorp", location="Berlin", job_url=""),
-        JobListing(title="AI Engineer", company="TechCorp", location="Hamburg", job_url=""),
-        JobListing(title="ML Engineer", company="TechCorp", location="Berlin", job_url=""),
-    ]
-    result = scraper._deduplicate_listings(listings)
-    assert len(result) == 2
-
-
-# ---------------------------------------------------------- build_search_query
-
-
 def test_build_search_query_contains_keywords(scraper, sample_job_search_params):
     query = scraper._build_search_query(sample_job_search_params)
     assert "AI Engineer" in query

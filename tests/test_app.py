@@ -225,3 +225,37 @@ def test_search_params_carry_defaults_the_ui_does_not_expose(monkeypatch, isolat
     shares_params_object = app._config.search_params is params
     assert not shares_params_object
     assert app._config.search_params.keywords == before
+
+
+# --------------------------------------------------------- relevance wiring
+
+
+def test_excluded_keywords_from_the_form_reach_the_pipeline(monkeypatch, isolated_output):
+    scraper = RecordingScraper(
+        [
+            JobListing(title="AI Engineer", company="Acme"),
+            JobListing(title="Werkstudent AI Engineer", company="Globex"),
+        ]
+    )
+    monkeypatch.setattr(app, "_scraper", scraper)
+
+    _, _, report, _ = _run(excluded_keywords="Werkstudent, Praktikum")
+
+    assert "AI Engineer" in report
+    assert "Werkstudent" not in report
+    assert scraper.seen_params[0].excluded_keywords == ["Werkstudent", "Praktikum"]
+
+
+def test_irrelevant_titles_are_filtered_out_of_the_report(monkeypatch, isolated_output):
+    scraper = RecordingScraper(
+        [
+            JobListing(title="AI Engineer", company="Acme"),
+            JobListing(title="Shopify Backend Developer", company="Globex"),
+        ]
+    )
+    monkeypatch.setattr(app, "_scraper", scraper)
+
+    _, _, report, _ = _run(keywords="AI Engineer")
+
+    assert "AI Engineer" in report
+    assert "Shopify" not in report

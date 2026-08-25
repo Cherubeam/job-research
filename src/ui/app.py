@@ -48,6 +48,7 @@ def run_job_research(
     salary_max: int,
     output_format: str,
     interleave_sites: bool = True,
+    excluded_keywords: str = "",
 ) -> Generator[tuple[str, str, str, str | None], None, None]:
     """Run job research with given parameters. Yields (status_md, log_text, report_md, filepath)."""
     if not keywords.strip():
@@ -87,6 +88,7 @@ def run_job_research(
         seniority_level=SeniorityLevel(seniority),
         salary_minimum=salary_min,
         salary_maximum=salary_max,
+        excluded_keywords=[k.strip() for k in excluded_keywords.split(",") if k.strip()],
     )
 
     # Run search in background thread
@@ -249,6 +251,14 @@ def create_ui() -> gr.Blocks:
                         value="markdown",
                     )
 
+                    exclude_input = gr.Textbox(
+                        label="Exclude titles containing",
+                        placeholder="e.g. Werkstudent, Praktikum, Sales",
+                        info="Comma-separated. Matched on whole words.",
+                        value=", ".join(_config.search_params.excluded_keywords),
+                    )
+
+                with gr.Row():
                     interleave_sites = gr.Checkbox(
                         label="Interleave results from different job boards",
                         value=_config.interleave_sites,
@@ -284,6 +294,13 @@ def create_ui() -> gr.Blocks:
                 ### How filters are applied
                 - **Location** and **work type** are passed to the backend and
                   shape what gets fetched.
+                - **Relevance** scores each title against your keywords and the
+                  configured alternatives, keeping those that cover more than
+                  half of any one phrase. "Sales Engineer" covers 1 of the 2
+                  tokens in "AI Engineer", so it is dropped.
+                - **Exclude titles containing** drops matching titles outright,
+                  matched on whole words — excluding "sales" will not reject
+                  "Salesforce Engineer".
                 - **Salary** is applied locally, by overlap. Listings that state
                   no salary are kept — most German postings omit it, and dropping
                   them would discard the majority of real results.
@@ -291,6 +308,11 @@ def create_ui() -> gr.Blocks:
                   title (for example "Senior", "Junior", "Werkstudent",
                   "Teamleiter"). Job boards expose no reliable seniority field, so
                   this is a heuristic.
+
+                Hourly and monthly pay is converted to an annual figure before
+                comparison (40h x 52 weeks for hourly), so salary filtering and
+                statistics compare like with like. Figures that cannot be pay for
+                the stated period — contract hours, a posting year — are ignored.
 
                 Because salary and seniority are applied after the fetch, changing
                 them re-filters the cached results instead of re-running the search.
@@ -319,6 +341,7 @@ def create_ui() -> gr.Blocks:
                 salary_max,
                 output_format,
                 interleave_sites,
+                exclude_input,
             ],
             outputs=[status_output, log_output, results_output, download_file],
         )
