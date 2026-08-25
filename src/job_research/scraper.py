@@ -74,15 +74,18 @@ class ClaudeScraper:
         cache_dir: Path,
         cache_duration_hours: int = 24,
     ) -> list[JobListing]:
-        """Search for jobs matching *params*, using a local cache to avoid repeat API calls."""
+        """Search for jobs matching *params*, using a local cache to avoid repeat API calls.
+
+        Returns every listing found. Salary/seniority filtering, interleaving,
+        and truncation happen downstream in `pipeline.apply`.
+        """
         cache_key = create_cache_key(
             "claude_web_search",
-            params.keywords,
-            params.location,
+            keywords=params.keywords,
+            location=params.location,
             work_type=params.work_type.value,
-            seniority_level=params.seniority_level.value,
-            salary_min=params.salary_minimum,
-            salary_max=params.salary_maximum,
+            boards=tuple(self._boards),
+            max_jobs=self._max_jobs,
         )
         cached = load_cache(cache_dir, cache_key)
         if cached is not None:

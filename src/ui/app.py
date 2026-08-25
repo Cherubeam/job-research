@@ -5,10 +5,12 @@ import os
 import threading
 import time
 from collections.abc import Generator
+from dataclasses import replace
 
 import gradio as gr
 
-from job_research.config import Config, OutputFormat, ScraperBackend, SeniorityLevel, WorkType
+from job_research import pipeline
+from job_research.config import Config, ScraperBackend, SeniorityLevel, WorkType
 from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
 from job_research.scraper import ClaudeScraper, JobScraper
@@ -75,30 +77,28 @@ def run_job_research(
     root_logger = logging.getLogger("job_research")
     root_logger.addHandler(handler)
 
-    # Prepare config
-    _config.search_params.keywords = keywords
-    _config.search_params.location = location
-    _config.search_params.work_type = WorkType(work_type)
-    _config.search_params.seniority_level = SeniorityLevel(seniority)
-    _config.search_params.salary_minimum = salary_min
-    _config.search_params.salary_maximum = salary_max
-    _config.output.output_format = OutputFormat(output_format)
-
-    search_kwargs: dict = {
-        "params": _config.search_params,
-        "cache_dir": _config.output.cache_directory,
-        "cache_duration_hours": _config.output.cache_duration_hours,
-    }
-    if hasattr(_scraper, "_interleave_by_site"):
-        search_kwargs["interleave"] = interleave_sites
+    # Per-request params. Never mutate the module-level config: two concurrent
+    # searches would otherwise overwrite each other's parameters mid-flight.
+    params = replace(
+        _config.search_params,
+        keywords=keywords,
+        location=location,
+        work_type=WorkType(work_type),
+        seniority_level=SeniorityLevel(seniority),
+        salary_minimum=salary_min,
+        salary_maximum=salary_max,
+    )
 
     # Run search in background thread
     result_holder: dict = {}
 
     def _search() -> None:
         try:
-            listings = _scraper.search_jobs(**search_kwargs)
-            result_holder["listings"] = listings
+            result_holder["listings"] = _scraper.search_jobs(
+                params=params,
+                cache_dir=_config.output.cache_directory,
+                cache_duration_hours=_config.output.cache_duration_hours,
+            )
         except Exception as exc:
             result_holder["error"] = exc
 
@@ -128,9 +128,14 @@ def run_job_research(
             )
             return
 
-        listings = result_holder["listings"]
+        result = pipeline.apply(
+            result_holder["listings"],
+            params,
+            max_jobs=_config.max_jobs_per_search,
+            interleave=interleave_sites,
+        )
         analyzer = JobAnalyzer()
-        analyzer.add_listings(listings)
+        analyzer.add_listings(result.listings)
 
         ext = "csv" if output_format == "csv" else "md"
         if output_format == "markdown":
@@ -146,14 +151,20 @@ def run_job_research(
         filepath.write_text(report, encoding="utf-8")
         logger.info("Report saved to %s", filepath)
 
-        total = getattr(_scraper, "total_found", len(listings))
-        if total > len(listings):
+        shown = len(result.listings)
+        if result.truncated:
             status = (
-                f"**Done** — Showing {len(listings)} of {total} found listings. "
+                f"**Done** — Showing {shown} of {result.matched} matching listings "
+                f"(from {result.fetched} fetched). "
                 f"Increase `MAX_JOBS_PER_SEARCH` for more. Saved to `{filename}`"
             )
+        elif result.matched < result.fetched:
+            status = (
+                f"**Done** — {shown} of {result.fetched} fetched listings match "
+                f"your salary and seniority filters. Saved to `{filename}`"
+            )
         else:
-            status = f"**Done** — Found {len(listings)} listings. Saved to `{filename}`"
+            status = f"**Done** — Found {shown} listings. Saved to `{filename}`"
 
         # Wrap CSV in a code fence so it renders in Markdown
         if output_format == "csv":

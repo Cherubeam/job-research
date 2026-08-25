@@ -1,5 +1,7 @@
 """Job data analysis and reporting"""
 
+import csv
+import io
 import re
 import statistics
 from datetime import datetime
@@ -217,27 +219,44 @@ class JobAnalyzer:
 
         return report
 
+    CSV_COLUMNS = (
+        "Title",
+        "Company",
+        "Location",
+        "Salary Min",
+        "Salary Max",
+        "Currency",
+        "Work Type",
+        "Job Board",
+        "URL",
+        "Posted Date",
+    )
+
     def generate_csv_report(self) -> str:
-        """Generate a CSV report"""
+        """Generate a CSV report.
+
+        Written with the stdlib `csv` module so quotes, commas, and newlines in
+        job titles and company names are escaped rather than corrupting the row.
+        """
         if not self.listings:
             return ""
 
-        # Header
-        lines = [
-            "Title,Company,Location,Salary Min,Salary Max,Currency,Work Type,Job Board,URL,Posted Date"
-        ]
-
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\n")
+        writer.writerow(self.CSV_COLUMNS)
         for listing in self.listings:
-            salary_min = listing.salary_min or ""
-            salary_max = listing.salary_max or ""
-            url = listing.job_url or ""
-            posted_date = listing.posted_date or ""
-
-            line = (
-                f'"{listing.title}","{listing.company}","{listing.location}",'
-                f"{salary_min},{salary_max},{listing.salary_currency},"
-                f'"{listing.work_type}","{listing.job_board}","{url}","{posted_date}"'
+            writer.writerow(
+                [
+                    listing.title,
+                    listing.company,
+                    listing.location,
+                    "" if listing.salary_min is None else listing.salary_min,
+                    "" if listing.salary_max is None else listing.salary_max,
+                    listing.salary_currency,
+                    listing.work_type,
+                    listing.job_board,
+                    listing.job_url,
+                    listing.posted_date or "",
+                ]
             )
-            lines.append(line)
-
-        return "\n".join(lines)
+        return buffer.getvalue().rstrip("\n")

@@ -14,35 +14,49 @@ from job_research.utils import (
 
 
 def test_create_cache_key_is_deterministic():
-    key1 = create_cache_key("board", "AI Engineer", "Berlin")
-    key2 = create_cache_key("board", "AI Engineer", "Berlin")
+    key1 = create_cache_key("board", keywords="AI Engineer", location="Berlin")
+    key2 = create_cache_key("board", keywords="AI Engineer", location="Berlin")
     assert key1 == key2
 
 
+def test_create_cache_key_ignores_keyword_argument_order():
+    key1 = create_cache_key("board", keywords="AI Engineer", location="Berlin")
+    key2 = create_cache_key("board", location="Berlin", keywords="AI Engineer")
+    assert key1 == key2
+
+
+def test_create_cache_key_differs_on_backend():
+    key1 = create_cache_key("jobspy", keywords="AI Engineer")
+    key2 = create_cache_key("claude_web_search", keywords="AI Engineer")
+    assert key1 != key2
+
+
 def test_create_cache_key_differs_on_different_inputs():
-    key1 = create_cache_key("board", "AI Engineer", "Berlin")
-    key2 = create_cache_key("board", "ML Engineer", "Berlin")
-    key3 = create_cache_key("board", "AI Engineer", "Munich")
+    key1 = create_cache_key("board", keywords="AI Engineer", location="Berlin")
+    key2 = create_cache_key("board", keywords="ML Engineer", location="Berlin")
+    key3 = create_cache_key("board", keywords="AI Engineer", location="Munich")
     assert key1 != key2
     assert key1 != key3
     assert key2 != key3
 
 
 def test_create_cache_key_differs_on_work_type():
-    key1 = create_cache_key("board", "AI Engineer", "Berlin", work_type="Remote only")
-    key2 = create_cache_key("board", "AI Engineer", "Berlin", work_type="Onsite only")
+    key1 = create_cache_key("board", keywords="AI Engineer", work_type="Remote only")
+    key2 = create_cache_key("board", keywords="AI Engineer", work_type="Onsite only")
     assert key1 != key2
 
 
-def test_create_cache_key_differs_on_seniority():
-    key1 = create_cache_key("board", "AI Engineer", "Berlin", seniority_level="Junior")
-    key2 = create_cache_key("board", "AI Engineer", "Berlin", seniority_level="Senior")
+def test_create_cache_key_distinguishes_added_parameters():
+    """An extra fetch input must change the key, never collide with its absence."""
+    key1 = create_cache_key("board", keywords="AI Engineer")
+    key2 = create_cache_key("board", keywords="AI Engineer", boards=("de.indeed.com",))
     assert key1 != key2
 
 
-def test_create_cache_key_differs_on_salary():
-    key1 = create_cache_key("board", "AI Engineer", "Berlin", salary_min=50000, salary_max=100000)
-    key2 = create_cache_key("board", "AI Engineer", "Berlin", salary_min=80000, salary_max=150000)
+def test_create_cache_key_does_not_collide_across_value_boundaries():
+    """Values are repr'd, so "a"+"bc" cannot hash the same as "ab"+"c"."""
+    key1 = create_cache_key("board", x="a", y="bc")
+    key2 = create_cache_key("board", x="ab", y="c")
     assert key1 != key2
 
 

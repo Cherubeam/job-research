@@ -45,6 +45,10 @@ _TITLE_STOPWORDS = frozenset(
     }
 )
 
+# Boards python-jobspy reaches for this project. Phase 3 derives this from the
+# source registry instead of hardcoding it (see F2 in the architecture review).
+_SITES = ("linkedin", "indeed")
+
 _JOB_TYPE_MAP = {
     "fulltime": "Full-time",
     "parttime": "Part-time",
@@ -59,28 +63,35 @@ class JobSpyScraper:
     def __init__(self, max_jobs: int = 20, country: str = "Germany") -> None:
         self._max_jobs = max_jobs
         self._country = country
-        self.total_found: int = 0
+
+    @property
+    def _results_wanted(self) -> int:
+        """Overfetch, since relevance filtering discards part of what comes back."""
+        return int(self._max_jobs * 1.5)
 
     def search_jobs(
         self,
         params: JobSearchParams,
         cache_dir: Path,
         cache_duration_hours: int = 24,
-        interleave: bool = True,
     ) -> list[JobListing]:
-        """Search for jobs matching *params*, using a local cache."""
+        """Fetch every relevant listing for *params*, using a local cache.
+
+        Returns the full deduplicated set. Salary/seniority filtering,
+        interleaving, and truncation happen downstream in `pipeline.apply`, so
+        the cache stays valid while those are adjusted.
+        """
         cache_key = create_cache_key(
             "jobspy",
-            params.keywords,
-            params.location,
+            keywords=params.keywords,
+            location=params.location,
             work_type=params.work_type.value,
-            seniority_level=params.seniority_level.value,
-            salary_min=params.salary_minimum,
-            salary_max=params.salary_maximum,
+            sites=tuple(_SITES),
+            results_wanted=self._results_wanted,
         )
         cached = load_cache(cache_dir, cache_key)
         if cached is not None:
-            logger.info("Cache hit for key %s", cache_key)
+            logger.info("Cache hit for key %s (%d listings)", cache_key, len(cached))
             return [JobListing(**item) for item in cached]
 
         listings = self._scrape(params)
@@ -90,27 +101,14 @@ class JobSpyScraper:
         if before_dedup != len(listings):
             logger.info("Dedup removed %d duplicates", before_dedup - len(listings))
 
-        if interleave:
-            listings = self._interleave_by_site(listings)
-
-        self.total_found = len(listings)
-        listings = listings[: self._max_jobs]
-
-        if self.total_found > self._max_jobs:
-            logger.info(
-                "Showing %d of %d found listings. Increase MAX_JOBS_PER_SEARCH for more.",
-                self._max_jobs,
-                self.total_found,
-            )
-
-        site_dist = Counter(lst.job_board for lst in listings)
-        logger.info("Final site distribution: %s", dict(site_dist))
-
         if not listings:
             raise RuntimeError(
                 "Job search returned no relevant listings. "
                 "Try broadening your search keywords or location."
             )
+
+        site_dist = Counter(lst.job_board for lst in listings)
+        logger.info("Fetched site distribution: %s", dict(site_dist))
 
         save_cache(
             cache_dir,
@@ -129,11 +127,11 @@ class JobSpyScraper:
         search_term = f'"{params.keywords}"'
 
         kwargs: dict = {
-            "site_name": ["linkedin", "indeed"],
+            "site_name": list(_SITES),
             "search_term": search_term,
             "location": location,
             "country_indeed": self._country,
-            "results_wanted": int(self._max_jobs * 1.5),
+            "results_wanted": self._results_wanted,
             "linkedin_fetch_description": True,
             "verbose": 2,
         }
@@ -147,7 +145,7 @@ class JobSpyScraper:
                 "Scraping LinkedIn + Indeed: search_term=%r, location=%r, max=%d",
                 search_term,
                 location,
-                int(self._max_jobs * 1.5),
+                self._results_wanted,
             )
             df = scrape_jobs(**kwargs)
         except Exception as exc:
@@ -282,29 +280,6 @@ class JobSpyScraper:
         except ValidationError:
             logger.info("Skipped invalid row: %.100s", title)
             return None
-
-    @staticmethod
-    def _interleave_by_site(listings: list[JobListing]) -> list[JobListing]:
-        """Interleave listings from different job boards for balanced representation."""
-        from collections import defaultdict
-
-        by_site: dict[str, list[JobListing]] = defaultdict(list)
-        for listing in listings:
-            by_site[listing.job_board or "unknown"].append(listing)
-
-        result: list[JobListing] = []
-        site_iters = [iter(jobs) for jobs in by_site.values()]
-        while site_iters:
-            exhausted = []
-            for i, it in enumerate(site_iters):
-                val = next(it, None)
-                if val is not None:
-                    result.append(val)
-                else:
-                    exhausted.append(i)
-            for i in reversed(exhausted):
-                site_iters.pop(i)
-        return result
 
     @staticmethod
     def _deduplicate(listings: list[JobListing]) -> list[JobListing]:

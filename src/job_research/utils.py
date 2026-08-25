@@ -7,20 +7,16 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 
-def create_cache_key(
-    board: str,
-    keywords: str,
-    location: str,
-    work_type: str = "",
-    seniority_level: str = "",
-    salary_min: int = 0,
-    salary_max: int = 0,
-) -> str:
-    """Create a cache key from search parameters"""
-    key_str = (
-        f"{board}:{keywords}:{location}:{work_type}:{seniority_level}:{salary_min}:{salary_max}"
-    )
-    return hashlib.md5(key_str.encode()).hexdigest()
+def create_cache_key(backend: str, **fetch_inputs: object) -> str:
+    """Create a cache key for *backend* from the inputs that shape the fetch.
+
+    Pass **only** parameters the remote fetch actually depends on. Anything
+    applied locally afterwards — salary bounds, seniority, interleaving,
+    display truncation — must be left out, or every adjustment to it forces a
+    pointless re-fetch that returns the same listings.
+    """
+    parts = [backend] + [f"{name}={fetch_inputs[name]!r}" for name in sorted(fetch_inputs)]
+    return hashlib.md5("|".join(parts).encode()).hexdigest()
 
 
 def save_cache(cache_dir: Path, key: str, data: Any, duration_hours: int = 24) -> None:

@@ -130,29 +130,35 @@ def test_characterizes_salary_parsing_without_unit_detection(raw, current_result
 
 # --------------------------------------------------------------------- CSV output
 #
-# F8: the CSV writer is hand-rolled f-strings with no escaping. Phase 1 replaces
-# it with the stdlib `csv` module.
+# F8 (FIXED in Phase 1): the writer now uses the stdlib `csv` module, so these
+# assert correct escaping rather than the old corruption.
 
 
-def test_characterizes_csv_corrupts_titles_containing_quotes():
-    """F8: an embedded double quote is emitted raw, so the row will not round-trip."""
+def test_csv_escapes_titles_containing_quotes():
+    """F8: an embedded double quote survives the round trip."""
     analyzer = JobAnalyzer()
     analyzer.add_listing(JobListing(title='Senior "AI" Engineer', company="Acme"))
 
-    raw = analyzer.generate_csv_report()
-    assert '"Senior "AI" Engineer"' in raw  # unescaped, malformed
-
-    parsed = list(csv.reader(io.StringIO(raw)))[1]
-    assert parsed[0] != 'Senior "AI" Engineer'  # does NOT survive the round trip
+    parsed = list(csv.reader(io.StringIO(analyzer.generate_csv_report())))[1]
+    assert parsed[0] == 'Senior "AI" Engineer'
 
 
-def test_characterizes_csv_corrupts_fields_containing_newlines():
-    """F8: a newline inside a field splits the row. Phase 1 should fix this."""
+def test_csv_escapes_fields_containing_newlines():
+    """F8: a newline inside a field stays inside that field."""
     analyzer = JobAnalyzer()
     analyzer.add_listing(JobListing(title="AI Engineer", company="Acme\nGmbH"))
 
-    raw = analyzer.generate_csv_report()
-    assert len(raw.strip().split("\n")) == 3  # header + one row split across two lines
+    rows = list(csv.reader(io.StringIO(analyzer.generate_csv_report())))
+    assert len(rows) == 2  # header + exactly one row
+    assert rows[1][1] == "Acme\nGmbH"
+
+
+def test_csv_escapes_fields_containing_delimiters():
+    analyzer = JobAnalyzer()
+    analyzer.add_listing(JobListing(title="AI Engineer, Platform", company="Acme"))
+
+    parsed = list(csv.reader(io.StringIO(analyzer.generate_csv_report())))[1]
+    assert parsed[0] == "AI Engineer, Platform"
 
 
 def test_csv_round_trips_ordinary_fields():

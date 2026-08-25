@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from job_research.analyzer import JobListing
-from job_research.config import JobSearchParams, WorkType
+from job_research.config import JobSearchParams, SeniorityLevel, WorkType
 from job_research.jobspy_scraper import JobSpyScraper
 
 
@@ -399,13 +399,13 @@ class TestSearchJobsCache:
             scraper.search_jobs(params, tmp_cache_dir)
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
-    def test_overfetch_truncates_to_max_jobs(
+    def test_returns_full_fetch_without_truncating(
         self,
         mock_scrape,
         tmp_cache_dir: Path,
     ) -> None:
+        """Truncation is the pipeline's job — the scraper caches everything it found."""
         small_scraper = JobSpyScraper(max_jobs=2, country="Germany")
-        # Create a DataFrame with 5 relevant rows
         df = pd.DataFrame(
             {
                 "site": ["indeed"] * 5,
@@ -426,37 +426,47 @@ class TestSearchJobsCache:
 
         listings = small_scraper.search_jobs(params, tmp_cache_dir)
 
-        assert len(listings) == 2
+        assert len(listings) == 5
 
     @patch("job_research.jobspy_scraper.scrape_jobs")
-    def test_total_found_reflects_pre_truncation_count(
+    def test_cache_key_ignores_locally_applied_filters(
         self,
         mock_scrape,
+        scraper: JobSpyScraper,
+        sample_jobspy_dataframe: pd.DataFrame,
         tmp_cache_dir: Path,
     ) -> None:
-        small_scraper = JobSpyScraper(max_jobs=2, country="Germany")
-        df = pd.DataFrame(
-            {
-                "site": ["indeed"] * 5,
-                "title": [f"AI Engineer {i}" for i in range(5)],
-                "company": [f"Company{i}" for i in range(5)],
-                "location": ["Berlin"] * 5,
-                "min_amount": [np.nan] * 5,
-                "max_amount": [np.nan] * 5,
-                "job_url": [f"https://example.com/{i}" for i in range(5)],
-                "description": ["desc"] * 5,
-                "date_posted": [np.nan] * 5,
-                "is_remote": [False] * 5,
-                "job_type": [np.nan] * 5,
-            }
+        """Salary and seniority are applied after the fetch, so they must not re-fetch."""
+        mock_scrape.return_value = sample_jobspy_dataframe
+        base = JobSearchParams(keywords="AI Engineer", location="Berlin")
+        scraper.search_jobs(base, tmp_cache_dir)
+
+        widened = JobSearchParams(
+            keywords="AI Engineer",
+            location="Berlin",
+            salary_minimum=90000,
+            salary_maximum=180000,
+            seniority_level=SeniorityLevel.SENIOR,
         )
-        mock_scrape.return_value = df
+        scraper.search_jobs(widened, tmp_cache_dir)
+
+        mock_scrape.assert_called_once()  # second search served from cache
+
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_cache_key_reflects_result_count(
+        self,
+        mock_scrape,
+        sample_jobspy_dataframe: pd.DataFrame,
+        tmp_cache_dir: Path,
+    ) -> None:
+        """Asking for more jobs must re-fetch, not replay the smaller cached set."""
+        mock_scrape.return_value = sample_jobspy_dataframe
         params = JobSearchParams(keywords="AI Engineer", location="Berlin")
 
-        listings = small_scraper.search_jobs(params, tmp_cache_dir)
+        JobSpyScraper(max_jobs=20).search_jobs(params, tmp_cache_dir)
+        JobSpyScraper(max_jobs=200).search_jobs(params, tmp_cache_dir)
 
-        assert len(listings) == 2
-        assert small_scraper.total_found == 5
+        assert mock_scrape.call_count == 2
 
 
 class TestDeduplication:
@@ -538,50 +548,6 @@ class TestWorkTypeMapping:
         params = JobSearchParams(work_type=WorkType.ONSITE)
         job_type, is_remote = scraper._map_work_type(params)
         assert is_remote is False
-
-
-class TestInterleave:
-    """Tests site interleaving."""
-
-    def test_interleave_by_site(self) -> None:
-        listings = [
-            JobListing(title="A1", company="X", job_board="Indeed"),
-            JobListing(title="A2", company="Y", job_board="Indeed"),
-            JobListing(title="A3", company="Z", job_board="Indeed"),
-            JobListing(title="B1", company="P", job_board="Linkedin"),
-            JobListing(title="B2", company="Q", job_board="Linkedin"),
-        ]
-
-        result = JobSpyScraper._interleave_by_site(listings)
-
-        boards = [r.job_board for r in result]
-        assert boards == ["Indeed", "Linkedin", "Indeed", "Linkedin", "Indeed"]
-
-    def test_interleave_preserves_order_within_site(self) -> None:
-        listings = [
-            JobListing(title="A1", company="X", job_board="Indeed"),
-            JobListing(title="A2", company="Y", job_board="Indeed"),
-            JobListing(title="B1", company="P", job_board="Linkedin"),
-            JobListing(title="B2", company="Q", job_board="Linkedin"),
-        ]
-
-        result = JobSpyScraper._interleave_by_site(listings)
-
-        indeed = [r.title for r in result if r.job_board == "Indeed"]
-        linkedin = [r.title for r in result if r.job_board == "Linkedin"]
-        assert indeed == ["A1", "A2"]
-        assert linkedin == ["B1", "B2"]
-
-    def test_interleave_single_site(self) -> None:
-        listings = [
-            JobListing(title="A1", company="X", job_board="Indeed"),
-            JobListing(title="A2", company="Y", job_board="Indeed"),
-        ]
-
-        result = JobSpyScraper._interleave_by_site(listings)
-
-        assert len(result) == 2
-        assert [r.title for r in result] == ["A1", "A2"]
 
 
 class TestBuildKeywordTokens:
