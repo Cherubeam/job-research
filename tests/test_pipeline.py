@@ -1,5 +1,7 @@
 """Tests for pipeline.py — post-fetch filtering, interleaving, and truncation."""
 
+from datetime import date
+
 import pytest
 
 from job_research import pipeline
@@ -214,3 +216,50 @@ def test_apply_on_empty_input():
     assert result.listings == []
     assert (result.fetched, result.matched) == (0, 0)
     assert result.truncated is False
+
+
+# ------------------------------------------------------------------- recency
+
+
+def _dated(posted: str | None) -> JobListing:
+    return JobListing(title="AI Engineer", posted_date=posted)
+
+
+def test_filter_by_posted_within_none_is_a_passthrough():
+    listings = [_dated("2020-01-01")]
+    assert pipeline.filter_by_posted_within(listings, None) == listings
+
+
+def test_filter_by_posted_within_keeps_recent_and_drops_old():
+    today = date(2026, 8, 25)
+    listings = [_dated("2026-08-24"), _dated("2026-08-01")]
+    result = pipeline.filter_by_posted_within(listings, 7, today=today)
+    assert [lst.posted_date for lst in result] == ["2026-08-24"]
+
+
+def test_filter_by_posted_within_includes_the_boundary_day():
+    today = date(2026, 8, 25)
+    listings = [_dated("2026-08-18")]  # exactly 7 days old
+    assert pipeline.filter_by_posted_within(listings, 7, today=today) == listings
+
+
+@pytest.mark.parametrize("posted", [None, "", "vor 3 Tagen", "not-a-date"])
+def test_filter_by_posted_within_keeps_listings_with_no_usable_date(posted):
+    """A source that omits or free-texts the date must not lose all its results."""
+    listings = [_dated(posted)]
+    assert pipeline.filter_by_posted_within(listings, 7, today=date(2026, 8, 25)) == listings
+
+
+def test_filter_by_posted_within_accepts_a_timestamp():
+    today = date(2026, 8, 25)
+    listings = [_dated("2026-08-24T14:12:34.425")]
+    assert pipeline.filter_by_posted_within(listings, 7, today=today) == listings
+
+
+def test_apply_runs_the_recency_filter():
+    listings = [
+        _listing("AI Engineer", company="Fresh", posted_date="2026-08-24"),
+        _listing("AI Engineer", company="Stale", posted_date="2020-01-01"),
+    ]
+    result = pipeline.apply(listings, _params(posted_within_days=3650), max_jobs=10)
+    assert result.matched == 2

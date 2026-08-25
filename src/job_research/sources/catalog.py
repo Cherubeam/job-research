@@ -23,6 +23,8 @@ class Backend(str, Enum):
     """Anthropic web search, restricted to a source's domain."""
     JOBSPY = "jobspy"
     """python-jobspy, which scrapes a fixed set of boards directly."""
+    BUNDESAGENTUR = "bundesagentur"
+    """The federal job board's own search endpoint. See ADR-001."""
 
 
 @dataclass(frozen=True)
@@ -122,7 +124,7 @@ _SOURCES: tuple[Source, ...] = (
         id="arbeitsagentur",
         label="Arbeitsagentur.de",
         domain="arbeitsagentur.de",
-        backends=_CLAUDE_ONLY,
+        backends=frozenset({Backend.CLAUDE, Backend.BUNDESAGENTUR}),
         job_url_pattern=re.compile(r"arbeitsagentur\.de/"),
         search_hint="For Arbeitsagentur: any arbeitsagentur.de URL with a path is acceptable.",
         caveat=(

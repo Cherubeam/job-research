@@ -77,9 +77,7 @@ def main() -> None:
     print("\n--- Sample listings (first 5) ---")
     for i, listing in enumerate(listings[:5], 1):
         salary = (
-            f"€{listing.salary_min}-{listing.salary_max}"
-            if listing.salary_min
-            else "no salary"
+            f"€{listing.salary_min}-{listing.salary_max}" if listing.salary_min else "no salary"
         )
         desc_preview = (listing.description[:80] + "...") if listing.description else "(none)"
         print(f"  {i}. {listing.title}")
@@ -103,9 +101,7 @@ def main() -> None:
             board_config=config.job_boards,
         )
         try:
-            claude_listings = claude_scraper.search_jobs(
-                params, cache_dir, cache_duration_hours=0
-            )
+            claude_listings = claude_scraper.search_jobs(params, cache_dir, cache_duration_hours=0)
         except RuntimeError as exc:
             print(f"ERROR: {exc}")
             return

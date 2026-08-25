@@ -4,10 +4,14 @@ These run locally, so adjusting them re-filters cached listings instead of
 re-running the search.
 """
 
+import logging
 import re
+from datetime import date, timedelta
 
 from job_research.analyzer import JobListing
 from job_research.config import SeniorityLevel
+
+logger = logging.getLogger(__name__)
 
 # Title markers used to infer seniority. Matched case-insensitively on word
 # boundaries against the job title, so "lead" does not fire inside "leadership".
@@ -123,5 +127,42 @@ def filter_by_salary(listings: list[JobListing], minimum: int, maximum: int) -> 
         low = listing.salary_min if listing.salary_min is not None else float("-inf")
         high = listing.salary_max if listing.salary_max is not None else float("inf")
         if low <= maximum and high >= minimum:
+            kept.append(listing)
+    return kept
+
+
+def parse_posted_date(raw: str | None) -> date | None:
+    """Parse a listing's `posted_date`, or None if it is absent or unrecognised.
+
+    Sources agree on ISO dates often enough to be worth trying and never worth
+    relying on: the field is a free string, and the Claude backend passes
+    through whatever the page said.
+    """
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+
+
+def filter_by_posted_within(
+    listings: list[JobListing], days: int | None, *, today: date | None = None
+) -> list[JobListing]:
+    """Keep listings published within *days*. `None` disables the filter.
+
+    **Listings with no parseable date are kept**, the same call made for unknown
+    salaries: a source that omits the field should not have all its results
+    silently dropped. The Bundesagentur backend also applies this server-side
+    via `veroeffentlichtseit`, so there it narrows the fetch rather than the
+    result set.
+    """
+    if days is None:
+        return listings
+    cutoff = (today or date.today()) - timedelta(days=days)
+    kept = []
+    for listing in listings:
+        posted = parse_posted_date(listing.posted_date)
+        if posted is None or posted >= cutoff:
             kept.append(listing)
     return kept

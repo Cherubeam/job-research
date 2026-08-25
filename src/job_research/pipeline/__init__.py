@@ -9,7 +9,7 @@ Order matters:
 1. **relevance** — drop titles that do not match the query, before anything
    downstream spends effort on them.
 2. **dedup** — collapse the same posting reached through several sources.
-3. **salary / seniority** — narrow to what was asked for.
+3. **salary / recency / seniority** — narrow to what was asked for.
 4. **interleave** — round-robin across boards.
 5. **truncate** — cut to `max_jobs`, last, so filtering never returns fewer
    results than requested for no reason.
@@ -22,9 +22,11 @@ from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams
 from job_research.pipeline.dedup import deduplicate, identity, normalize_location
 from job_research.pipeline.filters import (
+    filter_by_posted_within,
     filter_by_salary,
     filter_by_seniority,
     infer_seniority,
+    parse_posted_date,
 )
 from job_research.pipeline.interleave import interleave_by_site
 from job_research.pipeline.relevance import (
@@ -41,12 +43,14 @@ __all__ = [
     "PipelineResult",
     "apply",
     "deduplicate",
+    "filter_by_posted_within",
     "filter_by_relevance",
     "filter_by_salary",
     "filter_by_seniority",
     "identity",
     "infer_seniority",
     "interleave_by_site",
+    "parse_posted_date",
     "is_excluded",
     "normalize_location",
     "score_title",
@@ -100,6 +104,10 @@ def apply(
     before = len(listings)
     listings = filter_by_salary(listings, params.salary_minimum, params.salary_maximum)
     _log_drop("Salary filter", before, len(listings))
+
+    before = len(listings)
+    listings = filter_by_posted_within(listings, params.posted_within_days)
+    _log_drop(f"Posted-within filter ({params.posted_within_days}d)", before, len(listings))
 
     before = len(listings)
     listings = filter_by_seniority(listings, params.seniority_level)

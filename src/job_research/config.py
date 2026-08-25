@@ -94,6 +94,7 @@ class ScraperBackend(str, Enum):
 
     CLAUDE = "claude"
     JOBSPY = "jobspy"
+    BUNDESAGENTUR = "bundesagentur"
 
 
 @dataclass
@@ -124,6 +125,8 @@ class JobSearchParams:
     """Source ids to search. Ids the active backend cannot reach are skipped."""
     excluded_keywords: list[str] = field(default_factory=list)
     """Titles containing any of these phrases are dropped outright."""
+    posted_within_days: int | None = None
+    """Only listings published within N days. None disables the filter."""
     relevance_threshold: float = 0.6
     """Fraction of a search phrase a title must cover to be kept. See pipeline.relevance."""
 
@@ -184,6 +187,9 @@ class Config:
             salary_maximum=int(os.getenv("SALARY_MAXIMUM", "200000")),
             enabled_sources=_enabled_sources_from_env(),
             excluded_keywords=_split_list(os.getenv("EXCLUDED_KEYWORDS", "")),
+            posted_within_days=(
+                int(os.environ["POSTED_WITHIN_DAYS"]) if os.getenv("POSTED_WITHIN_DAYS") else None
+            ),
             relevance_threshold=float(os.getenv("RELEVANCE_THRESHOLD", "0.6")),
         )
 

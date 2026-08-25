@@ -14,6 +14,7 @@ from job_research.config import Config, ScraperBackend, SeniorityLevel, WorkType
 from job_research.sources import Backend, catalog
 from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
+from job_research.sources.bundesagentur import BundesagenturScraper
 from job_research.scraper import ClaudeScraper, JobScraper
 from job_research.utils import generate_output_filename
 from ui.log_capture import LogCaptureHandler
@@ -28,6 +29,9 @@ try:
     if _config.scraper_backend == ScraperBackend.JOBSPY:
         _scraper = JobSpyScraper(max_jobs=_config.max_jobs_per_search)
         logger.info("Using JobSpyScraper (no API key needed)")
+    elif _config.scraper_backend == ScraperBackend.BUNDESAGENTUR:
+        _scraper = BundesagenturScraper(max_jobs=_config.max_jobs_per_search)
+        logger.info("Using BundesagenturScraper (no API key needed) — see ADR-001")
     elif _config.claude_api_key:
         _scraper = ClaudeScraper(
             api_key=_config.claude_api_key,
@@ -39,9 +43,12 @@ except Exception:
     logger.exception("Failed to initialize scraper")
 
 
-_ACTIVE_BACKEND = (
-    Backend.JOBSPY if _config.scraper_backend == ScraperBackend.JOBSPY else Backend.CLAUDE
-)
+_BACKEND_FOR_SETTING = {
+    ScraperBackend.JOBSPY: Backend.JOBSPY,
+    ScraperBackend.BUNDESAGENTUR: Backend.BUNDESAGENTUR,
+    ScraperBackend.CLAUDE: Backend.CLAUDE,
+}
+_ACTIVE_BACKEND = _BACKEND_FOR_SETTING[_config.scraper_backend]
 
 
 def _source_choices() -> list[tuple[str, str]]:
@@ -76,6 +83,7 @@ def run_job_research(
     interleave_sites: bool = True,
     excluded_keywords: str = "",
     selected_sources: list[str] | None = None,
+    posted_within_days: int | None = None,
 ) -> Generator[tuple[str, str, str, str | None], None, None]:
     """Run job research with given parameters. Yields (status_md, log_text, report_md, filepath)."""
     if not keywords.strip():
@@ -93,6 +101,7 @@ def run_job_research(
             "No scraper backend is configured.\n\n"
             "To fix, set `SCRAPER_BACKEND` in your `.env` file:\n"
             "- `SCRAPER_BACKEND=jobspy` (no API key needed)\n"
+            "- `SCRAPER_BACKEND=bundesagentur` (no API key needed)\n"
             "- `SCRAPER_BACKEND=claude` (requires `CLAUDE_API_KEY`)\n\n"
             "For Claude backend, also set `CLAUDE_API_KEY=your-key`",
             None,
@@ -116,6 +125,7 @@ def run_job_research(
         salary_minimum=salary_min,
         salary_maximum=salary_max,
         excluded_keywords=[k.strip() for k in excluded_keywords.split(",") if k.strip()],
+        posted_within_days=posted_within_days or None,
         enabled_sources=(
             list(selected_sources)
             if selected_sources
@@ -283,6 +293,14 @@ def create_ui() -> gr.Blocks:
                         value="markdown",
                     )
 
+                    posted_within = gr.Number(
+                        label="Posted within (days)",
+                        value=_config.search_params.posted_within_days,
+                        precision=0,
+                        minimum=0,
+                        info="Leave empty for no limit. Listings with no date are kept.",
+                    )
+
                     source_input = gr.CheckboxGroup(
                         label="Job Sources",
                         choices=_source_choices(),
@@ -389,6 +407,7 @@ def create_ui() -> gr.Blocks:
                 interleave_sites,
                 exclude_input,
                 source_input,
+                posted_within,
             ],
             outputs=[status_output, log_output, results_output, download_file],
         )

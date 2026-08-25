@@ -56,13 +56,15 @@ def main() -> None:
     print()
 
     # Make the API call directly to inspect raw response
-    tools = [{
-        "type": "web_search_20250305",
-        "name": "web_search",
-        "max_uses": 10,
-        "allowed_domains": scraper._boards,
-        "user_location": {"type": "approximate", "country": "DE"},
-    }]
+    tools = [
+        {
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 10,
+            "allowed_domains": scraper._boards,
+            "user_location": {"type": "approximate", "country": "DE"},
+        }
+    ]
     system = scraper._build_system_prompt()
     user_message = f"Search for {query} job listings and extract what you find"
     messages = [{"role": "user", "content": user_message}]
@@ -88,9 +90,7 @@ def main() -> None:
     print()
 
     # Extract Claude's JSON output
-    raw_text = "\n\n".join(
-        block.text for block in response.content if block.type == "text"
-    )
+    raw_text = "\n\n".join(block.text for block in response.content if block.type == "text")
     text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()
     data = scraper._extract_json(text)
 
@@ -106,14 +106,15 @@ def main() -> None:
         follow_up_messages = [
             {"role": "user", "content": user_message},
             {"role": "assistant", "content": raw_text},
-            {"role": "user", "content": (
-                "Now output ONLY the JSON array of job listings you found. "
-                "No commentary, no markdown fences — just the raw JSON array."
-            )},
+            {
+                "role": "user",
+                "content": (
+                    "Now output ONLY the JSON array of job listings you found. "
+                    "No commentary, no markdown fences — just the raw JSON array."
+                ),
+            },
         ]
-        retry_response = scraper._make_api_call(
-            follow_up_messages, max_tokens=4096, system=system
-        )
+        retry_response = scraper._make_api_call(follow_up_messages, max_tokens=4096, system=system)
         retry_text = "\n\n".join(
             block.text for block in retry_response.content if block.type == "text"
         )
@@ -158,7 +159,9 @@ def main() -> None:
     print("=== Summary ===")
     total = matched + search_page + fabricated
     match_rate = (matched / total * 100) if total else 0
-    print(f"  Web search result URLs:  {len(search_urls)} ({job_urls} job, {search_page_urls} search-page)")
+    print(
+        f"  Web search result URLs:  {len(search_urls)} ({job_urls} job, {search_page_urls} search-page)"
+    )
     print(f"  Claude output listings:  {total}")
     print(f"  Valid (job URL + in search): {matched}/{total} ({match_rate:.0f}%)")
     print(f"  Search-page URLs:        {search_page}")
@@ -166,8 +169,7 @@ def main() -> None:
 
     # Show missed valid job URLs
     valid_ground_truth = {
-        url for url in search_urls
-        if any(a.is_job_listing_url(url) for a in adapters)
+        url for url in search_urls if any(a.is_job_listing_url(url) for a in adapters)
     }
     claude_urls = {item.get("job_url", "") for item in data}
     missed = valid_ground_truth - claude_urls
