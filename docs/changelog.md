@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.git-blame-ignore-revs` so the bulk black reformatting commit does not obscure `git blame`.
 - `pandas-stubs` dev dependency.
 - `docs/architecture-review.md` — architecture review with findings (F1–F13) and a phased refactor plan.
-- `docs/decisions/` — ADR folder; ADR-001 records the Bundesagentur für Arbeit access posture (opt-in, off by default).
+- `docs/decisions/` — ADR folder; ADR-001 records the Bundesagentur für Arbeit access posture and ADR-002 the LinkedIn scraping posture (both opt-in, off by default).
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JobBoardConfig` and its seven booleans removed; `boards.py` folded into the registry. `SEARCH_*` env vars still work with a deprecation warning when `ENABLED_SOURCES` is unset.
 - `ClaudeScraper` no longer takes `board_config`; sources are resolved per search, so a selection change no longer needs a new scraper.
 - `Config.to_dict` is generated from `fields()` and excludes `claude_api_key` — the hand-written version had already drifted, missing four fields.
-- Default sources are now Indeed **and** LinkedIn for both backends. The Claude backend previously defaulted to Indeed only; set `ENABLED_SOURCES=indeed` to restore that.
+- **Indeed is the only default-on source.** LinkedIn is now opt-in ([ADR-002](decisions/002-linkedin-scraping.md)): scraping it breaches its User Agreement, and on a rate-limit block python-jobspy returns partial results that are indistinguishable from a thin search.
+- `linkedin_fetch_description` disabled — it issued one extra request per job for descriptions LinkedIn's signup wall usually withholds.
 - **One deduplication rule for every backend.** The two scrapers previously disagreed: Claude keyed on URL alone (so a cross-posted job survived twice) and jobspy on title+company (so the same role in two cities collapsed into one). Now: normalized URL, then title + company + normalized location.
 - Relevance filtering and deduplication moved out of the scrapers into the pipeline, so both apply to every backend.
 - **Salary and seniority now actually filter results.** They previously reached only the cache key, so adjusting them forced a full re-fetch that returned identical listings.

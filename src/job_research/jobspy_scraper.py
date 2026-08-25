@@ -112,7 +112,10 @@ class JobSpyScraper:
             "location": location,
             "country_indeed": self._country,
             "results_wanted": self._results_wanted,
-            "linkedin_fetch_description": True,
+            # Off deliberately: it costs one extra request per job, and LinkedIn
+            # redirects guest requests for job pages to its signup wall, so the
+            # descriptions usually do not arrive anyway. See ADR-002.
+            "linkedin_fetch_description": False,
             "verbose": 2,
         }
         if job_type is not None:
@@ -122,7 +125,8 @@ class JobSpyScraper:
 
         try:
             logger.info(
-                "Scraping LinkedIn + Indeed: search_term=%r, location=%r, max=%d",
+                "Scraping %s: search_term=%r, location=%r, max=%d",
+                ", ".join(sites),
                 search_term,
                 location,
                 self._results_wanted,

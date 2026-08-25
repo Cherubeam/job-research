@@ -72,7 +72,7 @@ class TestParameterMapping:
         assert call_kwargs["search_term"] == '"AI Engineer"'
         assert call_kwargs["location"] == "Berlin"
         assert call_kwargs["country_indeed"] == "Germany"
-        assert call_kwargs["linkedin_fetch_description"] is True
+        assert call_kwargs["linkedin_fetch_description"] is False  # ADR-002
         assert call_kwargs["verbose"] == 2
 
     @patch("job_research.jobspy_scraper.scrape_jobs")

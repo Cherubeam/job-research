@@ -37,6 +37,17 @@ def test_defaults_are_reachable_by_both_backends():
         assert source.supports(Backend.JOBSPY)
 
 
+def test_indeed_is_the_only_default_on_source():
+    """ADR-002: LinkedIn is opt-in, so a default run scrapes nothing that forbids it."""
+    assert catalog.DEFAULT_ENABLED == frozenset({"indeed"})
+
+
+def test_linkedin_is_off_by_default_and_carries_its_caveat():
+    source = catalog.get("linkedin")
+    assert not source.default_enabled
+    assert "002-linkedin-scraping" in source.caveat
+
+
 def test_arbeitsagentur_is_off_by_default_and_carries_its_caveat():
     """Required by docs/decisions/001-bundesagentur-terms-of-use.md."""
     source = catalog.get("arbeitsagentur")

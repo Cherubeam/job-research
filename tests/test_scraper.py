@@ -152,7 +152,7 @@ def test_build_system_prompt_contains_expired_listing_rule(scraper):
 
 def test_default_selection_resolves_to_the_registry_defaults():
     sources = catalog.resolve(JobSearchParams().enabled_sources, Backend.CLAUDE)
-    assert {s.id for s in sources} == {"indeed", "linkedin"}
+    assert {s.id for s in sources} == {"indeed"}
 
 
 def test_explicit_selection_is_honoured():

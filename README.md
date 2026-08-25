@@ -81,7 +81,7 @@ CLAUDE_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 MAX_JOBS_PER_SEARCH=200        # max results to show (default 200)
 INTERLEAVE_SITES=true          # mix results from different job boards
-ENABLED_SOURCES=indeed,linkedin  # which boards to search
+ENABLED_SOURCES=indeed         # which boards to search
 EXCLUDED_KEYWORDS=             # drop titles containing these (comma-separated)
 RELEVANCE_THRESHOLD=0.6        # phrase coverage a title must reach to be kept
 JOB_KEYWORDS=AI Engineer
@@ -128,7 +128,7 @@ Gradio UI → run_job_research()
 | Source | Claude backend | jobspy backend | Default |
 |---|---|---|---|
 | Indeed.de | yes | yes | on |
-| LinkedIn | yes | yes | on |
+| LinkedIn | yes | yes | off — see [ADR-002](docs/decisions/002-linkedin-scraping.md) |
 | StepStone.de | yes | — | off |
 | Monster.de | yes | — | off |
 | Honeypot.io | yes | — | off |

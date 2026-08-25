@@ -76,9 +76,13 @@ _SOURCES: tuple[Source, ...] = (
         domain="linkedin.com",
         backends=_BOTH,
         jobspy_site="linkedin",
-        default_enabled=True,
         job_url_pattern=re.compile(r"linkedin\.com/jobs/view/\d"),
         search_hint="For LinkedIn: individual job URLs contain /jobs/view/<id>.",
+        caveat=(
+            "Scraping breaches LinkedIn's User Agreement and is heavily rate-limited; "
+            "a block returns partial results that look like a thin search. Off by "
+            "default — see docs/decisions/002-linkedin-scraping.md."
+        ),
     ),
     Source(
         id="stepstone",
