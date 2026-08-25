@@ -6,9 +6,15 @@
 
 ---
 
-> **Progress:** Phases 0-4 are merged. Phase 5a (seen-state store) is next.
-> Findings still open: F11 (no persistence). F12 (documentation drift) is
-> corrected as each phase lands.
+> **Progress:** Phases 0-4 and 5a are merged. Every finding from the original
+> review is resolved. What remains is Phase 5b (where job *status* lives —
+> deliberately deferred until 5a has been used for a while) and Phase 6
+> (multi-backend orchestration).
+>
+> **Note on the run diff:** the plan said "new / still open / disappeared".
+> Disappearance was dropped: a posting absent from today's results may simply
+> not match today's query, and reporting it as withdrawn would need per-query
+> history. The store reports new and returning only.
 >
 > **Correction to §4 below:** the field names taken from the MHP client are
 > wrong for the posting list — that client reads only the employer facet and
@@ -145,7 +151,7 @@ exposes no `total_found`, so [app.py:149](../src/ui/app.py)'s
 `getattr(_scraper, "total_found", …)` reports differently depending on which
 backend is active.
 
-### F11 — No stable identity, no persistence (Phase 5a)
+### F11 — No stable identity, no persistence (Phase 5a) — RESOLVED
 
 `JobListing` has no id, no `source_id`, and `posted_date` is an unparsed `str`.
 Each run writes a timestamped file and forgets everything. Nothing can answer
@@ -304,7 +310,7 @@ slip.
 - Tests run against recorded JSON fixtures; no live HTTP in the suite. A separate
   `scripts/probe_bundesagentur.py` handles manual calibration.
 
-### Phase 5a — Seen-state store · *medium; the payoff*
+### Phase 5a — Seen-state store · *medium; the payoff* — **DONE**
 
 Everything here is needed no matter where triage eventually happens.
 

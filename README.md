@@ -20,6 +20,7 @@ Job Research Tool aggregates job listings from German job boards through two ind
 - **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
 - **Salary Normalization**: Hourly and monthly pay annualised so filters and statistics compare like with like. Bundesagentur supplies structured amounts with an explicit period; other sources are parsed from free text
 - **Recency Filter**: "Posted within N days", applied server-side by Bundesagentur and locally elsewhere
+- **Run-over-Run Tracking**: A local SQLite store remembers every posting seen, so each run can tell you what is **new since last time** — and show only those
 - **Multi-Source Interleaving**: Results from different boards are round-robin mixed before truncation, so one board cannot crowd out the rest
 - **Cross-Source Deduplication**: One rule for every backend — normalized URL, then title + company + location
 - **Data Analysis**: Salary statistics and distribution by board, location, and work type
@@ -86,6 +87,7 @@ ENABLED_SOURCES=indeed,arbeitsagentur  # which boards to search
 EXCLUDED_KEYWORDS=             # drop titles containing these (comma-separated)
 RELEVANCE_THRESHOLD=0.6        # phrase coverage a title must reach to be kept
 POSTED_WITHIN_DAYS=            # only listings newer than N days (empty = no limit)
+STORE_PATH=data/jobs.db        # where the seen-jobs store lives
 JOB_KEYWORDS=AI Engineer
 LOCATION=All of Germany
 WORK_TYPE=Remote/Hybrid
@@ -114,7 +116,27 @@ change without invalidating the cache:
 6. **Interleave** — round-robins across boards so truncation does not favour whichever board was scraped first.
 7. **Truncate** — cuts to `MAX_JOBS_PER_SEARCH`, last, so filtering never returns fewer results than requested for no reason.
 
-The `JobAnalyzer` then generates summary statistics and a formatted report for the UI.
+Surviving listings are then recorded in the **job store**, which reports which of
+them were not present in any earlier run. `JobAnalyzer` generates summary
+statistics and a formatted report, marking new listings with 🆕.
+
+### Job identity
+
+Every posting gets a stable id derived from its *content* — normalized title,
+company, and location — never from its URL, which differs per source:
+
+```
+ai-engineer-acme-gmbh-berlin-d060f925
+```
+
+Readable on purpose: if job records ever become files in a Markdown vault, this
+becomes the filename. The same posting keeps the same id across runs and across
+the sources that found it, which is what makes "new since last run" trustworthy.
+
+**What the store does not claim: disappearance.** A posting missing from today's
+results has not necessarily been withdrawn — it may just not match today's query.
+Reporting that soundly needs per-query history, so the store reports *new* and
+*returning* and stays quiet rather than guessing.
 
 ```
 Gradio UI → run_job_research()
@@ -146,8 +168,9 @@ than the two columns above.)
 Selecting a source the active backend cannot reach searches less rather than
 failing; selecting nothing it can reach fails loudly.
 
-Remaining gaps are tracked in the [architecture review](docs/architecture-review.md):
-there is no run-over-run persistence yet (F11).
+Remaining work is tracked in the [architecture review](docs/architecture-review.md):
+where job *status* (interested / applied / rejected) should live is deliberately
+still open — see Phase 5b.
 
 ## Project Structure
 
@@ -162,6 +185,8 @@ job-research/
 │   │   ├── sources/            # Source registry + the Bundesagentur client
 │   │   ├── pipeline/           # Relevance, dedup, filters, interleaving
 │   │   ├── salary.py           # Salary parsing and annualisation
+│   │   ├── identity.py         # Stable, readable job ids
+│   │   ├── store.py            # SQLite store: what has been seen, and when
 │   │   ├── analyzer.py         # Job analysis and reporting
 │   │   └── utils.py            # Caching, formatting, parsing
 │   └── ui/
@@ -176,7 +201,8 @@ job-research/
 ├── tests/                      # pytest test suite
 ├── data/
 │   ├── results/                # Output reports
-│   └── cache/                  # Cached search results
+│   ├── cache/                  # Cached search results
+│   └── jobs.db                 # Seen-jobs store (gitignored)
 ├── pyproject.toml
 └── .env.example
 ```

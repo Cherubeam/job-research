@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Run-over-run tracking.** `src/job_research/store.py` — a SQLite store recording every posting seen, with `first_seen`/`last_seen`, so each run reports what is new. New listings are marked 🆕 in the report, and an "Only listings new since the last run" checkbox shows just those.
+- `src/job_research/identity.py` — stable, readable job ids (`ai-engineer-acme-gmbh-berlin-d060f925`) derived from normalized title + company + location, never from the URL. Same posting, same id, across runs and across sources.
+- `STORE_PATH` env var (default `data/jobs.db`).
+- Bundesagentur für Arbeit is now **on by default** alongside Indeed — see the [ADR-001 amendment](decisions/001-bundesagentur-terms-of-use.md#amendment-2026-08-25--enabled-by-default). All other ADR-001 constraints stand.
+- `tests/test_identity.py` and `tests/test_store.py`.
 - **Bundesagentur für Arbeit backend** (`SCRAPER_BACKEND=bundesagentur`) — Germany's federal job board via its v6 search endpoint. No API key. Off by default; read [ADR-001](decisions/001-bundesagentur-terms-of-use.md) first.
 - Structured salary from Bundesagentur (`gehaltsspanneVon`/`Bis`, `festgehalt`) with an explicit period (`verguetungsangabe`), annualised on the way in. Roughly a third of its postings carry pay — more than any other source here exposes.
 - `POSTED_WITHIN_DAYS` and a "Posted within (days)" UI field. Bundesagentur applies it server-side via `veroeffentlichtseit`; other backends filter locally. Listings with no parseable date are kept.
@@ -33,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- `JobListing.posted_date` is now a `date` rather than a free string; unparseable values become `None` instead of failing the listing. Date parsing lives in `utils.parse_date`, used by every source.
+- Deduplication normalization moved to `identity.py`, shared with the store so a posting's dedup identity and its stored id cannot drift apart.
 - Bundesagentur postings restrict to `angebotsart=1` (ARBEIT), excluding apprenticeships, dual study places, and self-employment offers.
 - **The jobspy backend honours the source selection** instead of hardcoding `["linkedin", "indeed"]`, so the board toggles are no longer fiction for the default backend (F2).
 - `JobBoardConfig` and its seven booleans removed; `boards.py` folded into the registry. `SEARCH_*` env vars still work with a deprecation warning when `ENABLED_SOURCES` is unset.
