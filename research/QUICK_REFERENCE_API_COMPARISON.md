@@ -6,6 +6,28 @@ A one-page quick reference for technical decision-making.
 
 ---
 
+> **Status note (2026-08-25).** This document records research completed in
+> November 2025. Parts of it have since been superseded by what was actually
+> built and verified against live endpoints. In particular:
+>
+> - **The Bundesagentur endpoint is now `pc/v6`, not `pc/v4`.** BA retired v4
+>   server-side on 2026-08-04 and every v4 query 404s. The v4 URLs below have
+>   been corrected in place.
+> - **The response shape is not what the docs implied.** Postings use `firma`,
+>   `stellenlokationen`, `referenznummer`, and `datumErsteVeroeffentlichung`,
+>   and about a third carry structured pay (`gehaltsspanneVon`/`Bis`,
+>   `festgehalt`, `verguetungsangabe`). Verified 2026-08-25 —
+>   see `scripts/probe_bundesagentur.py`.
+> - **XING was dropped** — its domain blocks Anthropic's web crawler.
+> - **The "do not scrape LinkedIn" conclusion below still stands** and is now
+>   recorded as [ADR-002](../docs/decisions/002-linkedin-scraping.md); the
+>   Bundesagentur access posture is [ADR-001](../docs/decisions/001-bundesagentur-terms-of-use.md).
+>
+> For what the tool actually does today, read `README.md` and
+> `docs/architecture-review.md` rather than the recommendations here.
+
+---
+
 ## At-a-Glance Decision Matrix
 
 ```
@@ -67,7 +89,7 @@ A one-page quick reference for technical decision-making.
 
 **API Endpoint:**
 ```
-https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs
+https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs
 ```
 
 **Minimal Working Example:**
@@ -78,17 +100,19 @@ headers = {"X-API-Key": "jobboerse-jobsuche"}
 params = {
     "was": "Software Developer",  # Job title search
     "wo": "Berlin",                # Location
-    "page": 1                      # Page number
+    "page": 1,                     # Page number
+    "angebotsart": 1,              # 1 = ARBEIT (excludes apprenticeships etc.)
 }
 
 response = requests.get(
-    "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs",
+    "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs",
     headers=headers,
     params=params
 )
 
-jobs = response.json()
-print(f"Found {len(jobs.get('stellenangebote', []))} jobs")
+payload = response.json()
+# v6 returns `ergebnisliste`; the retired v4 called it `stellenangebote`.
+print(f"Found {len(payload.get('ergebnisliste', []))} of {payload['maxErgebnisse']} jobs")
 ```
 
 **Rate Limit:** 1,000 requests/hour
@@ -228,7 +252,7 @@ START: Need German Job Data
 | **Description** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Location** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Company** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Salary** | ⚠️ Sometimes | ⚠️ Sometimes | ⚠️ Sometimes | ⚠️ Sometimes | ⚠️ Sometimes |
+| **Salary** | ✅ Structured (~⅓ of postings, with period) | ⚠️ Sometimes | ⚠️ Sometimes | ⚠️ Sometimes | ⚠️ Sometimes |
 | **Posted Date** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Job Type** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Experience** | ✅ | ✅ | ✅ | ⚠️ | ✅ |
@@ -239,7 +263,7 @@ START: Need German Job Data
 
 | Platform | Unique Data |
 |----------|-------------|
-| **Arbeitsagentur** | Official gov job IDs, temp staffing flag |
+| **Arbeitsagentur** | Official gov job IDs, temp staffing flag, structured pay ranges with an explicit period, server-side recency filter (`veroeffentlichtseit`) |
 | **Indeed** | Job source tracking, disposition data |
 | **StepStone** | Work field taxonomy, channel targeting |
 | **LinkedIn** | Professional profiles, company insights |

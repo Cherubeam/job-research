@@ -7,6 +7,28 @@ This document contains all sources and references used in the comprehensive job 
 
 ---
 
+> **Status note (2026-08-25).** This document records research completed in
+> November 2025. Parts of it have since been superseded by what was actually
+> built and verified against live endpoints. In particular:
+>
+> - **The Bundesagentur endpoint is now `pc/v6`, not `pc/v4`.** BA retired v4
+>   server-side on 2026-08-04 and every v4 query 404s. The v4 URLs below have
+>   been corrected in place.
+> - **The response shape is not what the docs implied.** Postings use `firma`,
+>   `stellenlokationen`, `referenznummer`, and `datumErsteVeroeffentlichung`,
+>   and about a third carry structured pay (`gehaltsspanneVon`/`Bis`,
+>   `festgehalt`, `verguetungsangabe`). Verified 2026-08-25 —
+>   see `scripts/probe_bundesagentur.py`.
+> - **XING was dropped** — its domain blocks Anthropic's web crawler.
+> - **The "do not scrape LinkedIn" conclusion below still stands** and is now
+>   recorded as [ADR-002](../docs/decisions/002-linkedin-scraping.md); the
+>   Bundesagentur access posture is [ADR-001](../docs/decisions/001-bundesagentur-terms-of-use.md).
+>
+> For what the tool actually does today, read `README.md` and
+> `docs/architecture-review.md` rather than the recommendations here.
+
+---
+
 ## Research Methodology
 
 ### Search Strategy
@@ -221,7 +243,7 @@ This document contains all sources and references used in the comprehensive job 
 
 **Key Findings:**
 - Free public API available
-- Endpoint: https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs
+- Endpoint: https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs
 - API Key: "jobboerse-jobsuche" (in header)
 - Rate limit: 1,000 requests/hour
 - 1.5M+ job listings

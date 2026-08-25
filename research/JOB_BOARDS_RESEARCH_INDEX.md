@@ -5,6 +5,43 @@
 
 ---
 
+> **Status note (2026-08-25).** This document records research completed in
+> November 2025. Parts of it have since been superseded by what was actually
+> built and verified against live endpoints. In particular:
+>
+> - **The Bundesagentur endpoint is now `pc/v6`, not `pc/v4`.** BA retired v4
+>   server-side on 2026-08-04 and every v4 query 404s. The v4 URLs below have
+>   been corrected in place.
+> - **The response shape is not what the docs implied.** Postings use `firma`,
+>   `stellenlokationen`, `referenznummer`, and `datumErsteVeroeffentlichung`,
+>   and about a third carry structured pay (`gehaltsspanneVon`/`Bis`,
+>   `festgehalt`, `verguetungsangabe`). Verified 2026-08-25 —
+>   see `scripts/probe_bundesagentur.py`.
+> - **XING was dropped** — its domain blocks Anthropic's web crawler.
+> - **The "do not scrape LinkedIn" conclusion below still stands** and is now
+>   recorded as [ADR-002](../docs/decisions/002-linkedin-scraping.md); the
+>   Bundesagentur access posture is [ADR-001](../docs/decisions/001-bundesagentur-terms-of-use.md).
+>
+> For what the tool actually does today, read `README.md` and
+> `docs/architecture-review.md` rather than the recommendations here.
+
+---
+
+## What was actually built (2026-08-25)
+
+The recommendations in these documents have been acted on. Current state:
+
+| Recommendation | Outcome |
+|---|---|
+| Implement the Arbeitsagentur API first | Done — `SCRAPER_BACKEND=bundesagentur`, on by default. v6 endpoint, structured salary, server-side recency filter. |
+| Do not scrape Indeed or LinkedIn | Partially followed. Indeed is scraped via python-jobspy (default on); LinkedIn is available but **off by default** per [ADR-002](../docs/decisions/002-linkedin-scraping.md). |
+| Evaluate the LinkedIn API | Not pursued — partner-only, enterprise pricing, no viable tier for a personal tool. |
+| Add XING | Dropped — the domain blocks Anthropic's web crawler. |
+| Monster RSS feeds | Not implemented. Monster remains reachable only via the Claude web-search backend. |
+| Adzuna as a sanctioned alternative | Still open — noted in [ADR-001](../docs/decisions/001-bundesagentur-terms-of-use.md) as the migration target if the BA posture has to change. |
+
+---
+
 ## Quick Navigation
 
 ### For Implementation Teams
