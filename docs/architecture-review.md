@@ -6,9 +6,17 @@
 
 ---
 
-> **Progress:** Phases 0-3 are merged. Phase 4 (Bundesagentur source) is next.
+> **Progress:** Phases 0-4 are merged. Phase 5a (seen-state store) is next.
 > Findings still open: F11 (no persistence). F12 (documentation drift) is
 > corrected as each phase lands.
+>
+> **Correction to §4 below:** the field names taken from the MHP client are
+> wrong for the posting list — that client reads only the employer facet and
+> titles, so it never touched them. The live v6 posting shape uses `firma`,
+> `stellenlokationen`, `referenznummer`, and `datumErsteVeroeffentlichung`,
+> verified 2026-08-25 with `scripts/probe_bundesagentur.py`. It also exposes
+> structured pay (`gehaltsspanneVon`/`Bis`, `festgehalt`, `verguetungsangabe`),
+> which the plan did not anticipate.
 
 ## 1. Verdict
 
@@ -284,7 +292,7 @@ slip.
   already missing `scraper_backend`, `claude_model`, `max_jobs_per_search`, and
   `interleave_sites`.
 
-### Phase 4 — Bundesagentur source · *medium*
+### Phase 4 — Bundesagentur source · *medium* — **DONE**
 
 - Port the client: v6 base URL, static header, injectable `base_url`,
   shape-tolerant parser.

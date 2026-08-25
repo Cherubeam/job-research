@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bundesagentur für Arbeit backend** (`SCRAPER_BACKEND=bundesagentur`) — Germany's federal job board via its v6 search endpoint. No API key. Off by default; read [ADR-001](decisions/001-bundesagentur-terms-of-use.md) first.
+- Structured salary from Bundesagentur (`gehaltsspanneVon`/`Bis`, `festgehalt`) with an explicit period (`verguetungsangabe`), annualised on the way in. Roughly a third of its postings carry pay — more than any other source here exposes.
+- `POSTED_WITHIN_DAYS` and a "Posted within (days)" UI field. Bundesagentur applies it server-side via `veroeffentlichtseit`; other backends filter locally. Listings with no parseable date are kept.
+- `scripts/probe_bundesagentur.py` — manual field-mapping check against the live endpoint, separating required from optional fields. The test suite itself never touches the network.
+- `tests/test_bundesagentur.py` — 30 tests against fixtures recorded from real v6 responses, including the ADR-001 page ceiling.
 - `src/job_research/sources/` — a source registry declaring, per board: id, label, domain, which backends can reach it, its listing-URL pattern, whether it is on by default, and any caveat.
 - `ENABLED_SOURCES` env var and a **Job Sources** picker in the UI, offering only sources the active backend can actually search. Sources with a caveat are flagged.
 - `tests/test_catalog.py` — registry integrity checks (unique ids, jobspy sources declare a site name, defaults work on both backends, Arbeitsagentur stays off by default).
@@ -28,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- Bundesagentur postings restrict to `angebotsart=1` (ARBEIT), excluding apprenticeships, dual study places, and self-employment offers.
 - **The jobspy backend honours the source selection** instead of hardcoding `["linkedin", "indeed"]`, so the board toggles are no longer fiction for the default backend (F2).
 - `JobBoardConfig` and its seven booleans removed; `boards.py` folded into the registry. `SEARCH_*` env vars still work with a deprecation warning when `ENABLED_SOURCES` is unset.
 - `ClaudeScraper` no longer takes `board_config`; sources are resolved per search, so a selection change no longer needs a new scraper.

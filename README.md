@@ -14,11 +14,12 @@ Job Research Tool aggregates job listings from German job boards through two ind
 
 ## Features
 
-- **Dual Scraper Backends**: Claude API web search (`web_search_20250305`) and python-jobspy — one selected per run via `SCRAPER_BACKEND`
+- **Three Scraper Backends**: python-jobspy, the Bundesagentur für Arbeit API, and Claude API web search — one selected per run via `SCRAPER_BACKEND`
 - **Source Registry**: One place declares every board, which backends can reach it, and how to recognise its listing URLs. The UI offers only sources the active backend can actually search
 - **Relevance Scoring**: Titles are scored against your keywords and alternatives, with a configurable threshold and a negative-keyword list
 - **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
-- **Salary Normalization**: Hourly and monthly pay annualised so filters and statistics compare like with like
+- **Salary Normalization**: Hourly and monthly pay annualised so filters and statistics compare like with like. Bundesagentur supplies structured amounts with an explicit period; other sources are parsed from free text
+- **Recency Filter**: "Posted within N days", applied server-side by Bundesagentur and locally elsewhere
 - **Multi-Source Interleaving**: Results from different boards are round-robin mixed before truncation, so one board cannot crowd out the rest
 - **Cross-Source Deduplication**: One rule for every backend — normalized URL, then title + company + location
 - **Data Analysis**: Salary statistics and distribution by board, location, and work type
@@ -84,6 +85,7 @@ INTERLEAVE_SITES=true          # mix results from different job boards
 ENABLED_SOURCES=indeed         # which boards to search
 EXCLUDED_KEYWORDS=             # drop titles containing these (comma-separated)
 RELEVANCE_THRESHOLD=0.6        # phrase coverage a title must reach to be kept
+POSTED_WITHIN_DAYS=            # only listings newer than N days (empty = no limit)
 JOB_KEYWORDS=AI Engineer
 LOCATION=All of Germany
 WORK_TYPE=Remote/Hybrid
@@ -95,8 +97,9 @@ SALARY_MAXIMUM=200000
 
 The tool uses a **dual-backend design** to maximize coverage and reliability:
 
-- **ClaudeScraper** — delegates search to Anthropic's `web_search_20250305` tool. Claude interprets the query, searches the web, and extracts structured job data. High accuracy, API cost per search.
-- **JobSpyScraper** — uses the python-jobspy library to query Indeed, LinkedIn, and other boards directly. Fast and free, but relies on site structure stability.
+- **JobSpyScraper** — queries Indeed (and LinkedIn, if enabled) via python-jobspy. Free, no key, but relies on site structure staying put.
+- **BundesagenturScraper** — the federal job board's own search endpoint. Free, no key, the largest German corpus, and the only source here that exposes **structured salary** and server-side recency filtering. Unofficial endpoint — read [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) before enabling.
+- **ClaudeScraper** — delegates search to Anthropic's `web_search_20250305` tool, cross-checking every extracted URL against the actual search results so nothing is fabricated. Reaches boards the other two cannot; costs API spend per search.
 
 Both backends produce a common `JobListing` data model (Pydantic) and return the
 **full deduplicated fetch**, which is what gets cached. Everything that shapes the
@@ -106,19 +109,21 @@ change without invalidating the cache:
 1. **Relevance** — scores each title against the search phrase and its alternatives, keeping those that cover more than half of any one phrase. Negative keywords drop titles outright.
 2. **Deduplicate** — collapses the same posting reached through several sources: normalized URL first, then title + company + location.
 3. **Salary filter** — keeps listings whose stated range overlaps the requested window. Listings with no stated salary are kept.
-4. **Seniority filter** — infers a level from the job title and keeps matching listings. Heuristic; no board exposes a reliable seniority field.
-5. **Interleave** — round-robins across boards so truncation does not favour whichever board was scraped first.
-6. **Truncate** — cuts to `MAX_JOBS_PER_SEARCH`, last, so filtering never returns fewer results than requested for no reason.
+4. **Recency filter** — keeps listings published within N days. Listings with no parseable date are kept.
+5. **Seniority filter** — infers a level from the job title and keeps matching listings. Heuristic; no board exposes a reliable seniority field.
+6. **Interleave** — round-robins across boards so truncation does not favour whichever board was scraped first.
+7. **Truncate** — cuts to `MAX_JOBS_PER_SEARCH`, last, so filtering never returns fewer results than requested for no reason.
 
 The `JobAnalyzer` then generates summary statistics and a formatted report for the UI.
 
 ```
 Gradio UI → run_job_research()
-               ├── ClaudeScraper.search_jobs()  ─┐   (cached: full fetch)
-               └── JobSpyScraper.search_jobs()  ─┤
+               ├── JobSpyScraper.search_jobs()        ─┐  (cached: full fetch)
+               ├── BundesagenturScraper.search_jobs() ─┤
+               └── ClaudeScraper.search_jobs()        ─┤
                                                  ▼
                                           pipeline.apply()
-              (relevance → dedup → salary → seniority → interleave → truncate)
+       (relevance → dedup → salary → recency → seniority → interleave → truncate)
                                                  ▼
                                          JobAnalyzer → Report
 ```
@@ -134,6 +139,9 @@ Gradio UI → run_job_research()
 | Honeypot.io | yes | — | off |
 | startup.jobs | yes | — | off |
 | Arbeitsagentur.de | yes | — | off — see [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) |
+
+(The `bundesagentur` backend serves Arbeitsagentur.de through its own API rather
+than the two columns above.)
 
 Selecting a source the active backend cannot reach searches less rather than
 failing; selecting nothing it can reach fails loudly.
@@ -151,7 +159,7 @@ job-research/
 │   │   ├── config.py           # Configuration management
 │   │   ├── scraper.py          # ClaudeScraper (Claude API web search)
 │   │   ├── jobspy_scraper.py   # JobSpyScraper (python-jobspy)
-│   │   ├── sources/            # Source registry (what exists, who can reach it)
+│   │   ├── sources/            # Source registry + the Bundesagentur client
 │   │   ├── pipeline/           # Relevance, dedup, filters, interleaving
 │   │   ├── salary.py           # Salary parsing and annualisation
 │   │   ├── analyzer.py         # Job analysis and reporting
@@ -176,6 +184,7 @@ job-research/
 ## Dependencies
 
 - **anthropic** (0.49+) — Claude API with web search tool
+- **requests** (2.31+) — Bundesagentur Jobsuche client
 - **python-jobspy** (1.1+) — Direct job board scraping
 - **pydantic** (2.0+) — Data validation and job listing models
 - **gradio** (4.0+) — Web interface
