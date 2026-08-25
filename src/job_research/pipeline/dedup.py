@@ -17,7 +17,7 @@ under different URLs.
 
 from urllib.parse import urlparse, urlunparse
 
-from job_research.analyzer import JobListing
+from job_research.analyzer import JobListing, SourceRef
 from job_research.identity import identity_key, normalize_location  # noqa: F401  (re-exported)
 
 
@@ -34,24 +34,51 @@ def identity(listing: JobListing) -> tuple[str, str, str]:
 
 
 def deduplicate(listings: list[JobListing]) -> list[JobListing]:
-    """Drop later listings that repeat an earlier one. First occurrence wins."""
+    """Collapse repeats, keeping the first occurrence and its provenance.
+
+    A dropped duplicate is not simply discarded: its board and URL are recorded
+    on the survivor's `alternates`. With several sources enabled the same job
+    genuinely appears on several boards, and knowing that is useful — it is also
+    how you reach the posting again if one board pulls it.
+    """
     seen_urls: set[str] = set()
-    seen_identities: set[tuple[str, str, str]] = set()
-    result: list[JobListing] = []
+    by_identity: dict[tuple[str, str, str], JobListing] = {}
+    order: list[tuple[str, str, str]] = []
 
     for listing in listings:
         url = listing.job_url.strip()
         normalized_url = _normalize_url(url) if url else ""
-        if normalized_url and normalized_url in seen_urls:
-            continue
-
         key = identity(listing)
-        if key in seen_identities:
+
+        duplicate_of = by_identity.get(key)
+        if duplicate_of is None and normalized_url and normalized_url in seen_urls:
+            # Same URL under a different identity: find the listing holding it.
+            duplicate_of = next(
+                (
+                    kept
+                    for kept in by_identity.values()
+                    if kept.job_url and _normalize_url(kept.job_url) == normalized_url
+                ),
+                None,
+            )
+
+        if duplicate_of is not None:
+            _add_alternate(duplicate_of, listing)
             continue
 
         if normalized_url:
             seen_urls.add(normalized_url)
-        seen_identities.add(key)
-        result.append(listing)
+        by_identity[key] = listing
+        order.append(key)
 
-    return result
+    return [by_identity[key] for key in order]
+
+
+def _add_alternate(kept: JobListing, duplicate: JobListing) -> None:
+    """Record where else *duplicate* was found, without repeating what we have."""
+    if not duplicate.job_board and not duplicate.job_url:
+        return
+    known_urls = {kept.job_url, *(ref.job_url for ref in kept.alternates)}
+    if duplicate.job_url and duplicate.job_url in known_urls:
+        return
+    kept.alternates.append(SourceRef(job_board=duplicate.job_board, job_url=duplicate.job_url))

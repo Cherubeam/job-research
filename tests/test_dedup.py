@@ -118,3 +118,56 @@ def test_order_is_otherwise_preserved():
         _listing(company="C", url="https://a/3"),
     ]
     assert [lst.company for lst in dedup.deduplicate(listings)] == ["A", "B", "C"]
+
+
+# ---------------------------------------------------------------- provenance
+
+
+def test_a_merged_duplicate_contributes_its_board_and_url():
+    """Running sources together is only worth it if you learn where else it is."""
+    listings = [
+        _listing(url="https://de.indeed.com/viewjob?jk=1"),
+        JobListing(
+            title="AI Engineer (m/w/d)",
+            company="Acme",
+            location="Berlin, Germany",
+            job_board="Arbeitsagentur",
+            job_url="https://arbeitsagentur.de/jobsuche/jobdetail/1",
+        ),
+    ]
+    result = dedup.deduplicate(listings)
+
+    assert len(result) == 1
+    assert [ref.job_board for ref in result[0].alternates] == ["Arbeitsagentur"]
+    assert result[0].boards == ["Arbeitsagentur"] or "Arbeitsagentur" in result[0].boards
+
+
+def test_boards_lists_the_primary_first():
+    primary = JobListing(
+        title="AI Engineer", company="Acme", job_board="Indeed", job_url="https://a/1"
+    )
+    other = JobListing(
+        title="AI Engineer", company="Acme", job_board="Arbeitsagentur", job_url="https://b/2"
+    )
+    merged = dedup.deduplicate([primary, other])[0]
+    assert merged.boards == ["Indeed", "Arbeitsagentur"]
+
+
+def test_a_duplicate_of_the_same_url_adds_no_alternate():
+    """Nothing new to learn: same link, same board."""
+    listings = [_listing(url="https://a/1"), _listing(url="https://a/1")]
+    assert dedup.deduplicate(listings)[0].alternates == []
+
+
+def test_three_sources_all_appear_as_provenance():
+    listings = [
+        JobListing(title="AI Engineer", company="Acme", job_board="Indeed", job_url="https://a/1"),
+        JobListing(
+            title="AI Engineer", company="Acme", job_board="LinkedIn", job_url="https://b/2"
+        ),
+        JobListing(
+            title="AI Engineer", company="Acme", job_board="Arbeitsagentur", job_url="https://c/3"
+        ),
+    ]
+    merged = dedup.deduplicate(listings)[0]
+    assert merged.boards == ["Indeed", "LinkedIn", "Arbeitsagentur"]

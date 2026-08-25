@@ -7,7 +7,8 @@ import pytest
 
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams
-from job_research.sources import catalog
+from job_research.orchestrator import Orchestrator
+from job_research.sources import Backend, catalog
 from job_research.store import JobStore
 from ui import app
 
@@ -46,6 +47,11 @@ class FailingScraper:
         raise RuntimeError("board unreachable")
 
 
+def install(monkeypatch, scraper, backends=(Backend.JOBSPY,)) -> None:
+    """Point the app's orchestrator at *scraper* for the given backends."""
+    monkeypatch.setattr(app, "_orchestrator", Orchestrator({b: scraper for b in backends}))
+
+
 @pytest.fixture
 def isolated_output(tmp_path, monkeypatch):
     """Point reports, cache, and the job store at a temp directory.
@@ -70,6 +76,7 @@ def _run(**overrides) -> tuple[str, str, str, str | None]:
         "salary_max": 200000,
         "output_format": "markdown",
         "interleave_sites": True,
+        "selected_sources": ["indeed"],
     }
     kwargs.update(overrides)
     last = None
@@ -94,18 +101,57 @@ def test_rejects_inverted_salary_range():
     assert filepath is None
 
 
-def test_reports_missing_scraper(monkeypatch):
-    monkeypatch.setattr(app, "_scraper", None)
-    status, _, report, _ = _run()
-    assert "Scraper not initialized" in status
-    assert "SCRAPER_BACKEND" in report
+def test_a_source_no_backend_can_reach_is_reported_as_skipped(monkeypatch, isolated_output):
+    """StepStone needs the Claude backend; without it, say so rather than return nothing."""
+    install(monkeypatch, RecordingScraper([]), backends=(Backend.JOBSPY,))
+
+    status, _, _, _ = _run(selected_sources=["stepstone"])
+
+    assert "No listings returned" in status
+    assert "StepStone.de: skipped" in status
+    assert "claude" in status
 
 
 def test_surfaces_scraper_errors(monkeypatch, isolated_output):
-    monkeypatch.setattr(app, "_scraper", FailingScraper())
+    install(monkeypatch, FailingScraper())
     status, _, _, filepath = _run()
     assert "board unreachable" in status
     assert filepath is None
+
+
+def test_every_selected_source_is_reported(monkeypatch, isolated_output):
+    """Sources are named explicitly: reading them from the ambient .env would
+    make this test depend on whatever the developer happens to have configured."""
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
+    install(monkeypatch, scraper, backends=(Backend.JOBSPY, Backend.BUNDESAGENTUR))
+
+    _, _, report, _ = _run(selected_sources=["indeed", "arbeitsagentur"])
+
+    assert "## Sources" in report
+    assert "Indeed.de" in report
+    assert "Arbeitsagentur.de" in report
+
+
+def test_an_empty_selection_falls_back_to_the_configured_sources(monkeypatch, isolated_output):
+    """An empty checkbox group must not silently mean "search nothing"."""
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
+    install(monkeypatch, scraper, backends=(Backend.JOBSPY, Backend.BUNDESAGENTUR))
+    monkeypatch.setattr(app._config.search_params, "enabled_sources", ["arbeitsagentur"])
+
+    _run(selected_sources=[])
+
+    assert scraper.seen_params[0].enabled_sources == ["arbeitsagentur"]
+
+
+def test_the_same_job_from_two_sources_is_merged_with_provenance(monkeypatch, isolated_output):
+    """The payoff of running sources together: one entry, both links."""
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme", location="Berlin")])
+    install(monkeypatch, scraper, backends=(Backend.JOBSPY, Backend.BUNDESAGENTUR))
+
+    _, _, report, _ = _run(selected_sources=["indeed", "arbeitsagentur"])
+
+    assert report.count("### 1. AI Engineer") == 1
+    assert "### 2." not in report
 
 
 # ----------------------------------------------------------------- happy path
@@ -113,7 +159,7 @@ def test_surfaces_scraper_errors(monkeypatch, isolated_output):
 
 def test_writes_report_and_returns_its_path(monkeypatch, isolated_output):
     scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     status, _, report, filepath = _run()
 
@@ -127,7 +173,7 @@ def test_writes_report_and_returns_its_path(monkeypatch, isolated_output):
 
 def test_csv_output_is_fenced_for_markdown_rendering(monkeypatch, isolated_output):
     scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     _, _, report, filepath = _run(output_format="csv")
 
@@ -144,7 +190,7 @@ def test_applies_seniority_filter_to_scraper_output(monkeypatch, isolated_output
             JobListing(title="Junior AI Engineer", company="Acme"),
         ]
     )
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     status, _, report, _ = _run(seniority="Senior")
 
@@ -157,7 +203,7 @@ def test_reports_truncation_against_the_matched_count(monkeypatch, isolated_outp
     scraper = RecordingScraper(
         [JobListing(title=f"AI Engineer {i}", company="Acme") for i in range(5)]
     )
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
     monkeypatch.setattr(app._config, "max_jobs_per_search", 2)
 
     status, _, _, _ = _run()
@@ -178,7 +224,7 @@ def test_concurrent_searches_do_not_share_parameters(monkeypatch, isolated_outpu
     """
     barrier = threading.Barrier(2)
     scraper = RecordingScraper(barrier=barrier)
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     errors: list[BaseException] = []
 
@@ -218,7 +264,7 @@ def test_concurrent_searches_do_not_share_parameters(monkeypatch, isolated_outpu
 def test_search_params_carry_defaults_the_ui_does_not_expose(monkeypatch, isolated_output):
     """Fields absent from the form (e.g. title alternatives) keep their config values."""
     scraper = RecordingScraper([JobListing(title="AI Engineer")])
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     before = app._config.search_params.keywords
     _run(keywords="Quantum Cartographer")
@@ -244,7 +290,7 @@ def test_excluded_keywords_from_the_form_reach_the_pipeline(monkeypatch, isolate
             JobListing(title="Werkstudent AI Engineer", company="Globex"),
         ]
     )
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     _, _, report, _ = _run(excluded_keywords="Werkstudent, Praktikum")
 
@@ -260,7 +306,7 @@ def test_irrelevant_titles_are_filtered_out_of_the_report(monkeypatch, isolated_
             JobListing(title="Shopify Backend Developer", company="Globex"),
         ]
     )
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     _, _, report, _ = _run(keywords="AI Engineer")
 
@@ -273,36 +319,22 @@ def test_irrelevant_titles_are_filtered_out_of_the_report(monkeypatch, isolated_
 
 def test_selected_sources_reach_the_scraper(monkeypatch, isolated_output):
     scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     _run(selected_sources=["indeed"])
 
     assert scraper.seen_params[0].enabled_sources == ["indeed"]
 
 
-def test_empty_selection_falls_back_to_configured_sources(monkeypatch, isolated_output):
-    """An empty checkbox group must not silently mean "search nothing"."""
-    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
-    monkeypatch.setattr(app, "_scraper", scraper)
-
-    _run(selected_sources=[])
-
-    assert scraper.seen_params[0].enabled_sources == _config_sources()
-
-
-def _config_sources() -> list[str]:
-    return list(app._config.search_params.enabled_sources)
-
-
-def test_source_choices_only_offer_what_the_backend_can_reach():
+def test_source_choices_only_offer_what_some_available_backend_can_reach():
     offered = {source_id for _, source_id in app._source_choices()}
-    reachable = {s.id for s in catalog.for_backend(app._ACTIVE_BACKEND)}
+    reachable = {s.id for s in catalog.all_sources() if any(s.supports(b) for b in app._scrapers)}
     assert offered == reachable
 
 
 def test_sources_with_a_caveat_are_flagged_in_their_label():
     labels = {source_id: label for label, source_id in app._source_choices()}
-    for source in catalog.for_backend(app._ACTIVE_BACKEND):
+    for source in app._selectable_sources():
         if source.caveat:
             assert labels[source.id].endswith("⚠")
 
@@ -312,7 +344,7 @@ def test_sources_with_a_caveat_are_flagged_in_their_label():
 
 def test_first_run_marks_every_listing_as_new(monkeypatch, isolated_output):
     scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     status, _, report, _ = _run()
 
@@ -323,7 +355,7 @@ def test_first_run_marks_every_listing_as_new(monkeypatch, isolated_output):
 
 def test_a_repeat_search_reports_nothing_new(monkeypatch, isolated_output):
     scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
-    monkeypatch.setattr(app, "_scraper", scraper)
+    install(monkeypatch, scraper)
 
     _run()
     status, _, report, _ = _run()
@@ -334,11 +366,11 @@ def test_a_repeat_search_reports_nothing_new(monkeypatch, isolated_output):
 
 def test_only_new_shows_just_the_unseen_listings(monkeypatch, isolated_output):
     first = JobListing(title="AI Engineer", company="Acme")
-    monkeypatch.setattr(app, "_scraper", RecordingScraper([first]))
+    install(monkeypatch, RecordingScraper([first]))
     _run()
 
     second = JobListing(title="ML Engineer", company="Globex")
-    monkeypatch.setattr(app, "_scraper", RecordingScraper([first, second]))
+    install(monkeypatch, RecordingScraper([first, second]))
     status, _, report, _ = _run(only_new=True)
 
     # Assert on listing headings: the report *title* echoes the keywords, so a
@@ -355,7 +387,7 @@ def test_listings_hidden_by_only_new_are_still_recorded(monkeypatch, isolated_ou
         JobListing(title="AI Engineer", company="Acme"),
         JobListing(title="ML Engineer", company="Globex"),
     ]
-    monkeypatch.setattr(app, "_scraper", RecordingScraper(listings))
+    install(monkeypatch, RecordingScraper(listings))
 
     _run(only_new=True)
     status, _, _, _ = _run()
@@ -365,16 +397,14 @@ def test_listings_hidden_by_only_new_are_still_recorded(monkeypatch, isolated_ou
 
 
 def test_the_same_job_from_another_source_is_not_new_again(monkeypatch, isolated_output):
-    monkeypatch.setattr(
-        app,
-        "_scraper",
+    install(
+        monkeypatch,
         RecordingScraper([JobListing(title="AI Engineer", company="Acme", location="Berlin")]),
     )
     _run()
 
-    monkeypatch.setattr(
-        app,
-        "_scraper",
+    install(
+        monkeypatch,
         RecordingScraper(
             [JobListing(title="AI Engineer (m/w/d)", company="Acme", location="Berlin, Germany")]
         ),

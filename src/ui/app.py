@@ -16,7 +16,8 @@ from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
 from job_research.sources.bundesagentur import BundesagenturScraper
 from job_research.store import JobStore
-from job_research.scraper import ClaudeScraper, JobScraper
+from job_research.orchestrator import JobScraper, Orchestrator
+from job_research.scraper import ClaudeScraper
 from job_research.utils import generate_output_filename
 from ui.log_capture import LogCaptureHandler
 
@@ -26,52 +27,64 @@ logger = logging.getLogger(__name__)
 
 _config = Config.from_env()
 _store = JobStore(_config.output.store_path)
-_scraper: JobScraper | None = None
-try:
-    if _config.scraper_backend == ScraperBackend.JOBSPY:
-        _scraper = JobSpyScraper(max_jobs=_config.max_jobs_per_search)
-        logger.info("Using JobSpyScraper (no API key needed)")
-    elif _config.scraper_backend == ScraperBackend.BUNDESAGENTUR:
-        _scraper = BundesagenturScraper(max_jobs=_config.max_jobs_per_search)
-        logger.info("Using BundesagenturScraper (no API key needed) — see ADR-001")
-    elif _config.claude_api_key:
-        _scraper = ClaudeScraper(
-            api_key=_config.claude_api_key,
-            model=_config.claude_model,
-            max_jobs=_config.max_jobs_per_search,
+
+
+def _build_scrapers(config: Config) -> dict[Backend, JobScraper]:
+    """Every backend that can actually run, given what is configured.
+
+    jobspy and Bundesagentur need no credentials, so they are always available;
+    Claude needs an API key and is simply absent without one.
+    """
+    scrapers: dict[Backend, JobScraper] = {
+        Backend.JOBSPY: JobSpyScraper(max_jobs=config.max_jobs_per_search),
+        Backend.BUNDESAGENTUR: BundesagenturScraper(max_jobs=config.max_jobs_per_search),
+    }
+    if config.claude_api_key:
+        scrapers[Backend.CLAUDE] = ClaudeScraper(
+            api_key=config.claude_api_key,
+            model=config.claude_model,
+            max_jobs=config.max_jobs_per_search,
         )
-        logger.info("Using ClaudeScraper")
-except Exception:
-    logger.exception("Failed to initialize scraper")
+    else:
+        logger.info("No CLAUDE_API_KEY — the Claude backend is unavailable")
+    return scrapers
 
 
-_BACKEND_FOR_SETTING = {
+_PREFERRED_BACKEND = {
     ScraperBackend.JOBSPY: Backend.JOBSPY,
     ScraperBackend.BUNDESAGENTUR: Backend.BUNDESAGENTUR,
     ScraperBackend.CLAUDE: Backend.CLAUDE,
-}
-_ACTIVE_BACKEND = _BACKEND_FOR_SETTING[_config.scraper_backend]
+}[_config.scraper_backend]
+
+_scrapers = _build_scrapers(_config)
+_orchestrator = Orchestrator(_scrapers, preferred=_PREFERRED_BACKEND)
+logger.info(
+    "Backends available: %s (preferred: %s)",
+    ", ".join(sorted(b.value for b in _scrapers)),
+    _PREFERRED_BACKEND.value,
+)
+
+
+def _selectable_sources() -> tuple:
+    """Sources some available backend can reach."""
+    return tuple(
+        source
+        for source in catalog.all_sources()
+        if any(source.supports(backend) for backend in _scrapers)
+    )
 
 
 def _source_choices() -> list[tuple[str, str]]:
-    """Selectable sources for the active backend, as (label, id) pairs.
-
-    Only sources this backend can actually reach are offered — showing
-    StepStone while running jobspy would be the same lie F2 was about.
-    """
-    choices = []
-    for source in catalog.for_backend(_ACTIVE_BACKEND):
-        label = f"{source.label} ⚠" if source.caveat else source.label
-        choices.append((label, source.id))
-    return choices
+    """Selectable sources as (label, id) pairs, caveated ones flagged."""
+    return [
+        (f"{source.label} ⚠" if source.caveat else source.label, source.id)
+        for source in _selectable_sources()
+    ]
 
 
 def _source_caveats() -> str:
     """Markdown footnotes for sources that carry a caveat."""
-    lines = [
-        f"- **{s.label}** — {s.caveat}" for s in catalog.for_backend(_ACTIVE_BACKEND) if s.caveat
-    ]
-    return "\n".join(lines)
+    return "\n".join(f"- **{s.label}** — {s.caveat}" for s in _selectable_sources() if s.caveat)
 
 
 def run_job_research(
@@ -95,20 +108,6 @@ def run_job_research(
 
     if salary_min > salary_max:
         yield ("**Error:** Minimum salary cannot be greater than maximum", "", "", None)
-        return
-
-    if _scraper is None:
-        yield (
-            "**Error:** Scraper not initialized",
-            "",
-            "No scraper backend is configured.\n\n"
-            "To fix, set `SCRAPER_BACKEND` in your `.env` file:\n"
-            "- `SCRAPER_BACKEND=jobspy` (no API key needed)\n"
-            "- `SCRAPER_BACKEND=bundesagentur` (no API key needed)\n"
-            "- `SCRAPER_BACKEND=claude` (requires `CLAUDE_API_KEY`)\n\n"
-            "For Claude backend, also set `CLAUDE_API_KEY=your-key`",
-            None,
-        )
         return
 
     # Set up log capture
@@ -141,7 +140,7 @@ def run_job_research(
 
     def _search() -> None:
         try:
-            result_holder["listings"] = _scraper.search_jobs(
+            result_holder["outcome"] = _orchestrator.search(
                 params=params,
                 cache_dir=_config.output.cache_directory,
                 cache_duration_hours=_config.output.cache_duration_hours,
@@ -175,8 +174,22 @@ def run_job_research(
             )
             return
 
+        outcome = result_holder["outcome"]
+        source_report = outcome.summary()
+
+        if not outcome.listings:
+            # Every source came back empty, failed, or was unreachable. Say which,
+            # rather than letting a broken source look like a quiet job market.
+            yield (
+                "**Error:** No listings returned.\n\n" + source_report,
+                handler.get_all(),
+                "",
+                None,
+            )
+            return
+
         result = pipeline.apply(
-            result_holder["listings"],
+            outcome.listings,
             params,
             max_jobs=_config.max_jobs_per_search,
             interleave=interleave_sites,
@@ -188,7 +201,10 @@ def run_job_research(
         new_ids = {lst.job_id for lst in diff.new}
 
         shown_listings = diff.new if only_new else result.listings
-        analyzer = JobAnalyzer(new_ids=new_ids)
+        analyzer = JobAnalyzer(
+            new_ids=new_ids,
+            source_notes=[o.describe() for o in outcome.outcomes],
+        )
         analyzer.add_listings(shown_listings)
 
         ext = "csv" if output_format == "csv" else "md"
@@ -231,6 +247,12 @@ def run_job_research(
             report_md = f"```\n{report}\n```"
         else:
             report_md = report
+
+        if outcome.failed:
+            status += (
+                f"\n\n**{len(outcome.failed)} source(s) failed** — results are "
+                "incomplete:\n\n" + "\n".join(f"- {o.describe()}" for o in outcome.failed)
+            )
 
         yield (status, handler.get_all(), report_md, str(filepath))
 
@@ -325,7 +347,7 @@ def create_ui() -> gr.Blocks:
                             for s in _config.search_params.enabled_sources
                             if s in {sid for _, sid in _source_choices()}
                         ],
-                        info=f"Sources reachable by the {_ACTIVE_BACKEND.value} backend.",
+                        info="All selected sources are searched in one run.",
                     )
 
                     exclude_input = gr.Textbox(

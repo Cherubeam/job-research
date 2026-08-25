@@ -13,6 +13,13 @@ from job_research.salary import parse_salary_range
 from job_research.utils import parse_date
 
 
+class SourceRef(BaseModel):
+    """Where else the same posting was found."""
+
+    job_board: str = ""
+    job_url: str = ""
+
+
 class JobListing(BaseModel):
     """Represents a single job listing"""
 
@@ -27,6 +34,8 @@ class JobListing(BaseModel):
     work_type: str = ""
     description: str = ""
     posted_date: Optional[date] = None
+    alternates: list[SourceRef] = []
+    """Other boards carrying this same posting, filled in by deduplication."""
 
     @field_validator("title")
     @classmethod
@@ -57,6 +66,15 @@ class JobListing(BaseModel):
         return data
 
     @property
+    def boards(self) -> list[str]:
+        """Every board this posting was found on, primary first."""
+        seen = [self.job_board] if self.job_board else []
+        for ref in self.alternates:
+            if ref.job_board and ref.job_board not in seen:
+                seen.append(ref.job_board)
+        return seen
+
+    @property
     def job_id(self) -> str:
         """Stable, readable id for this posting. See `job_research.identity`."""
         return make_job_id(self.title, self.company, self.location)
@@ -82,10 +100,16 @@ def _coerce_salary(v: object) -> Optional[int]:
 class JobAnalyzer:
     """Analyze job listings and generate reports"""
 
-    def __init__(self, new_ids: Optional[set[str]] = None) -> None:
+    def __init__(
+        self,
+        new_ids: Optional[set[str]] = None,
+        source_notes: Optional[list[str]] = None,
+    ) -> None:
         self.listings: list[JobListing] = []
         self.new_ids: set[str] = new_ids or set()
         """Ids of listings not seen in an earlier run; marked in the report."""
+        self.source_notes: list[str] = source_notes or []
+        """Per-source outcome lines, so a failed source is visible in the report."""
 
     def add_listing(self, listing: JobListing) -> None:
         """Add a job listing to the analyzer"""
@@ -169,6 +193,12 @@ class JobAnalyzer:
 
         report += "\n"
 
+        if self.source_notes:
+            report += "## Sources\n\n"
+            for note in self.source_notes:
+                report += f"- {note}\n"
+            report += "\n"
+
         # Listings by board
         report += "## Listings by Job Board\n\n"
         board_counts = self.get_listings_by_board()
@@ -210,6 +240,13 @@ class JobAnalyzer:
                 report += f"**Work Type:** {listing.work_type}\n\n"
 
             report += f"**Job Board:** {listing.job_board}\n\n"
+
+            if listing.alternates:
+                also = ", ".join(
+                    f"[{ref.job_board or 'link'}]({ref.job_url})" if ref.job_url else ref.job_board
+                    for ref in listing.alternates
+                )
+                report += f"**Also on:** {also}\n\n"
 
             if listing.job_url:
                 report += f"**Link:** [{listing.job_url}]({listing.job_url})\n\n"
