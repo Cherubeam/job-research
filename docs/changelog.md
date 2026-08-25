@@ -6,14 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `docs/architecture-review.md` — architecture review with findings (F1–F13) and a phased refactor plan.
+- `docs/decisions/` — ADR folder; ADR-001 records the Bundesagentur für Arbeit access posture (opt-in, off by default).
+- `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
+
 ### Changed
 - **Single-page UI**: Removed Results tab — search results now render inline on the Search page as formatted Markdown (no more `max_lines` truncation).
 - **Live progress**: Status line updates during search; expandable "Search Log" accordion shows full scraper log history.
 - `run_job_research()` is now a generator that streams status/log/result updates to the UI via a background thread.
 - CSV output wrapped in a code fence for proper Markdown display.
-
-### Added
-- `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ## [0.3.0] — 2026-03-14
 
