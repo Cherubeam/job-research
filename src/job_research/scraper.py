@@ -156,7 +156,8 @@ class ClaudeScraper:
                     kwargs["tools"] = tools
                 if system:
                     kwargs["system"] = system
-                return self._client.messages.create(**kwargs)
+                response: anthropic.types.Message = self._client.messages.create(**kwargs)
+                return response
             except anthropic.RateLimitError as exc:
                 if attempt == 2:
                     raise

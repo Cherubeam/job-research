@@ -4,7 +4,7 @@ import logging
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
+from typing import Optional, SupportsFloat
 
 import pandas as pd
 from jobspy import scrape_jobs
@@ -252,6 +252,10 @@ class JobSpyScraper:
 
         def _safe_int(val: object) -> Optional[int]:
             if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            # SupportsFloat, not (int, float): numpy's int64 subclasses neither,
+            # so an all-integer pandas column would otherwise coerce to None.
+            if not isinstance(val, (str, SupportsFloat)):
                 return None
             try:
                 return int(float(val))

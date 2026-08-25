@@ -88,7 +88,7 @@ def _parse_salary_range(salary_str: str) -> tuple[Optional[int], Optional[int]]:
 class JobAnalyzer:
     """Analyze job listings and generate reports"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.listings: list[JobListing] = []
 
     def add_listing(self, listing: JobListing) -> None:
@@ -105,7 +105,7 @@ class JobAnalyzer:
 
     def get_listings_by_board(self) -> dict[str, int]:
         """Count listings by job board"""
-        counts = {}
+        counts: dict[str, int] = {}
         for listing in self.listings:
             board = listing.job_board or "Unknown"
             counts[board] = counts.get(board, 0) + 1
@@ -113,7 +113,7 @@ class JobAnalyzer:
 
     def get_listings_by_location(self) -> dict[str, int]:
         """Count listings by location"""
-        counts = {}
+        counts: dict[str, int] = {}
         for listing in self.listings:
             location = listing.location or "Unknown"
             counts[location] = counts.get(location, 0) + 1
@@ -145,7 +145,7 @@ class JobAnalyzer:
 
     def get_work_type_distribution(self) -> dict[str, int]:
         """Count listings by work type"""
-        counts = {}
+        counts: dict[str, int] = {}
         for listing in self.listings:
             work_type = listing.work_type or "Unknown"
             counts[work_type] = counts.get(work_type, 0) + 1

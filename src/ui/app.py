@@ -174,6 +174,7 @@ def run_job_research(
 def create_ui() -> gr.Blocks:
     """Create and configure the Gradio interface"""
 
+    demo: gr.Blocks
     with gr.Blocks(title="Job Research Tool", theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
         # Job Market Research Tool
