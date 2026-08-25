@@ -3,7 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 
@@ -84,3 +84,20 @@ def extract_number_from_text(text: str) -> Optional[int]:
         except ValueError:
             return None
     return None
+
+
+def parse_date(value: object) -> Optional[date]:
+    """Parse an ISO date or timestamp, or return None.
+
+    Sources return this field as free text — an ISO date, a full timestamp, or
+    prose like "vor 3 Tagen". An unparseable date must not cost us the listing,
+    so anything unrecognised becomes None.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None

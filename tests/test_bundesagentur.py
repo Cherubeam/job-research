@@ -6,6 +6,7 @@ is unofficial (ADR-001) and a test suite must not depend on a third party being
 up, let alone query it on every CI run.
 """
 
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -68,7 +69,7 @@ def test_maps_a_posting_with_structured_pay():
     assert listing.company == "Orizon GmbH, Niederlassung München Süd"
     assert listing.location == "München"
     assert (listing.salary_min, listing.salary_max) == (79200, 82800)
-    assert listing.posted_date == "2026-08-24"
+    assert listing.posted_date == date(2026, 8, 24)
     assert listing.job_board == "Arbeitsagentur"
     assert listing.job_url == ("https://www.arbeitsagentur.de/jobsuche/jobdetail/14751-417A19182-S")
 
@@ -102,7 +103,7 @@ def test_falls_back_to_the_publication_period_when_the_date_field_is_absent():
     posting = {k: v for k, v in POSTING_WITH_PAY.items() if k != "datumErsteVeroeffentlichung"}
     listing = ba.to_job_listing(posting)
     assert listing is not None
-    assert listing.posted_date == "2026-08-24"
+    assert listing.posted_date == date(2026, 8, 24)
 
 
 # -------------------------------------------------------------------- salary

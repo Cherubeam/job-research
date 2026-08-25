@@ -140,6 +140,7 @@ class OutputConfig:
     generate_summary: bool = True
     generate_salary_analysis: bool = True
     cache_directory: Path = field(default_factory=lambda: Path.cwd() / "data" / "cache")
+    store_path: Path = field(default_factory=lambda: Path.cwd() / "data" / "jobs.db")
     cache_results: bool = True
     cache_duration_hours: int = 24
     send_email_notification: bool = False
@@ -197,6 +198,7 @@ class Config:
             output_directory=Path(os.getenv("OUTPUT_DIRECTORY", "data/results")),
             output_format=OutputFormat(os.getenv("OUTPUT_FORMAT", "markdown")),
             cache_duration_hours=int(os.getenv("CACHE_DURATION_HOURS", "24")),
+            store_path=Path(os.getenv("STORE_PATH", "data/jobs.db")),
         )
 
         return cls(

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams, WorkType
 from job_research.sources import Backend, catalog
-from job_research.utils import create_cache_key, load_cache, save_cache
+from job_research.utils import create_cache_key, load_cache, parse_date, save_cache
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class JobSpyScraper:
         save_cache(
             cache_dir,
             cache_key,
-            [lst.model_dump() for lst in listings],
+            [lst.model_dump(mode="json") for lst in listings],
             cache_duration_hours,
         )
         logger.info("Found %d listings (saved to cache)", len(listings))
@@ -219,7 +219,7 @@ class JobSpyScraper:
                 salary_max=_safe_int(row.get("max_amount")),
                 job_url=_safe_str(row.get("job_url")),
                 description=_safe_str(row.get("description")),
-                posted_date=_safe_str(row.get("date_posted")),
+                posted_date=parse_date(row.get("date_posted")),
                 job_board=job_board,
                 work_type=self._map_work_type_from_row(row),
             )

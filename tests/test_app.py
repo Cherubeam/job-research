@@ -8,6 +8,7 @@ import pytest
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams
 from job_research.sources import catalog
+from job_research.store import JobStore
 from ui import app
 
 
@@ -47,9 +48,14 @@ class FailingScraper:
 
 @pytest.fixture
 def isolated_output(tmp_path, monkeypatch):
-    """Point report and cache output at a temp directory."""
+    """Point reports, cache, and the job store at a temp directory.
+
+    The store especially: without this the suite would write into the real
+    `data/jobs.db` and quietly mark the user's actual jobs as already seen.
+    """
     monkeypatch.setattr(app._config.output, "output_directory", tmp_path / "results")
     monkeypatch.setattr(app._config.output, "cache_directory", tmp_path / "cache")
+    monkeypatch.setattr(app, "_store", JobStore(tmp_path / "jobs.db"))
     return tmp_path
 
 
@@ -299,3 +305,80 @@ def test_sources_with_a_caveat_are_flagged_in_their_label():
     for source in catalog.for_backend(app._ACTIVE_BACKEND):
         if source.caveat:
             assert labels[source.id].endswith("⚠")
+
+
+# ------------------------------------------------------- run-over-run (F11)
+
+
+def test_first_run_marks_every_listing_as_new(monkeypatch, isolated_output):
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
+    monkeypatch.setattr(app, "_scraper", scraper)
+
+    status, _, report, _ = _run()
+
+    assert "1 new since last run" in status
+    assert "🆕" in report
+    assert "- **New since last run:** 1" in report
+
+
+def test_a_repeat_search_reports_nothing_new(monkeypatch, isolated_output):
+    scraper = RecordingScraper([JobListing(title="AI Engineer", company="Acme")])
+    monkeypatch.setattr(app, "_scraper", scraper)
+
+    _run()
+    status, _, report, _ = _run()
+
+    assert "nothing new" in status
+    assert "🆕" not in report
+
+
+def test_only_new_shows_just_the_unseen_listings(monkeypatch, isolated_output):
+    first = JobListing(title="AI Engineer", company="Acme")
+    monkeypatch.setattr(app, "_scraper", RecordingScraper([first]))
+    _run()
+
+    second = JobListing(title="ML Engineer", company="Globex")
+    monkeypatch.setattr(app, "_scraper", RecordingScraper([first, second]))
+    status, _, report, _ = _run(only_new=True)
+
+    # Assert on listing headings: the report *title* echoes the keywords, so a
+    # bare substring check would match "Job Search Results: AI Engineer".
+    assert "### 1. ML Engineer" in report
+    assert "### 1. AI Engineer" not in report
+    assert "### 2." not in report  # only the new one is listed
+    assert "1 new of 2 matching listings" in status
+
+
+def test_listings_hidden_by_only_new_are_still_recorded(monkeypatch, isolated_output):
+    """Otherwise everything filtered out today reappears as new tomorrow."""
+    listings = [
+        JobListing(title="AI Engineer", company="Acme"),
+        JobListing(title="ML Engineer", company="Globex"),
+    ]
+    monkeypatch.setattr(app, "_scraper", RecordingScraper(listings))
+
+    _run(only_new=True)
+    status, _, _, _ = _run()
+
+    assert "nothing new" in status
+    assert app._store.count() == 2
+
+
+def test_the_same_job_from_another_source_is_not_new_again(monkeypatch, isolated_output):
+    monkeypatch.setattr(
+        app,
+        "_scraper",
+        RecordingScraper([JobListing(title="AI Engineer", company="Acme", location="Berlin")]),
+    )
+    _run()
+
+    monkeypatch.setattr(
+        app,
+        "_scraper",
+        RecordingScraper(
+            [JobListing(title="AI Engineer (m/w/d)", company="Acme", location="Berlin, Germany")]
+        ),
+    )
+    status, _, _, _ = _run()
+
+    assert "nothing new" in status

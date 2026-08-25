@@ -234,7 +234,7 @@ def test_filter_by_posted_within_keeps_recent_and_drops_old():
     today = date(2026, 8, 25)
     listings = [_dated("2026-08-24"), _dated("2026-08-01")]
     result = pipeline.filter_by_posted_within(listings, 7, today=today)
-    assert [lst.posted_date for lst in result] == ["2026-08-24"]
+    assert [lst.posted_date for lst in result] == [date(2026, 8, 24)]
 
 
 def test_filter_by_posted_within_includes_the_boundary_day():

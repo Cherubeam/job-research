@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -163,7 +165,7 @@ class TestDataFrameConversion:
         assert listing.salary_max == 95000
         assert listing.job_url == "https://de.indeed.com/viewjob?jk=abc123"
         assert listing.description == "Looking for an AI engineer with PyTorch experience."
-        assert listing.posted_date == "2026-03-10"
+        assert listing.posted_date == date(2026, 3, 10)
 
     def test_job_board_from_site_column(
         self, scraper: JobSpyScraper, sample_jobspy_dataframe: pd.DataFrame
@@ -184,14 +186,14 @@ class TestDataFrameConversion:
         assert listing.salary_min is None
         assert listing.salary_max is None
 
-    def test_missing_date_becomes_empty_string(
+    def test_missing_date_becomes_none(
         self, scraper: JobSpyScraper, sample_jobspy_dataframe: pd.DataFrame
     ) -> None:
         row = sample_jobspy_dataframe.iloc[2]
         listing = scraper._to_job_listing(row)
 
         assert listing is not None
-        assert listing.posted_date == ""
+        assert listing.posted_date is None
 
     def test_nan_title_returns_none(
         self, scraper: JobSpyScraper, sample_jobspy_dataframe: pd.DataFrame

@@ -30,7 +30,7 @@ import requests
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams, WorkType
 from job_research.salary import to_annual
-from job_research.utils import create_cache_key, load_cache, save_cache
+from job_research.utils import create_cache_key, load_cache, parse_date, save_cache
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +253,7 @@ def to_job_listing(posting: dict[str, Any]) -> JobListing | None:
         job_url=job_url,
         job_board="Arbeitsagentur",
         work_type=_work_type(posting),
-        posted_date=str(posted) if posted else None,
+        posted_date=parse_date(posted),
     )
 
 
@@ -303,7 +303,10 @@ class BundesagenturScraper:
             )
 
         save_cache(
-            cache_dir, cache_key, [lst.model_dump() for lst in listings], cache_duration_hours
+            cache_dir,
+            cache_key,
+            [lst.model_dump(mode="json") for lst in listings],
+            cache_duration_hours,
         )
         logger.info("Found %d listings (saved to cache)", len(listings))
         return listings

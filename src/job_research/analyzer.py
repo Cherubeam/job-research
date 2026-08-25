@@ -3,12 +3,14 @@
 import csv
 import io
 import statistics
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from job_research.identity import job_id as make_job_id
 from job_research.salary import parse_salary_range
+from job_research.utils import parse_date
 
 
 class JobListing(BaseModel):
@@ -24,7 +26,7 @@ class JobListing(BaseModel):
     job_url: str = ""
     work_type: str = ""
     description: str = ""
-    posted_date: Optional[str] = None
+    posted_date: Optional[date] = None
 
     @field_validator("title")
     @classmethod
@@ -32,6 +34,12 @@ class JobListing(BaseModel):
         if not v or not v.strip():
             raise ValueError("title must not be empty")
         return v
+
+    @field_validator("posted_date", mode="before")
+    @classmethod
+    def coerce_posted_date(cls, v: object) -> Optional[date]:
+        """Accept an ISO date, a timestamp, or prose; unparseable becomes None."""
+        return parse_date(v)
 
     @model_validator(mode="before")
     @classmethod
@@ -47,6 +55,11 @@ class JobListing(BaseModel):
             data["salary_min"] = _coerce_salary(raw_min)
             data["salary_max"] = _coerce_salary(raw_max)
         return data
+
+    @property
+    def job_id(self) -> str:
+        """Stable, readable id for this posting. See `job_research.identity`."""
+        return make_job_id(self.title, self.company, self.location)
 
     def salary_midpoint(self) -> Optional[float]:
         """Calculate salary midpoint"""
@@ -69,8 +82,10 @@ def _coerce_salary(v: object) -> Optional[int]:
 class JobAnalyzer:
     """Analyze job listings and generate reports"""
 
-    def __init__(self) -> None:
+    def __init__(self, new_ids: Optional[set[str]] = None) -> None:
         self.listings: list[JobListing] = []
+        self.new_ids: set[str] = new_ids or set()
+        """Ids of listings not seen in an earlier run; marked in the report."""
 
     def add_listing(self, listing: JobListing) -> None:
         """Add a job listing to the analyzer"""
@@ -140,6 +155,9 @@ class JobAnalyzer:
         # Summary section
         report += "## Summary\n\n"
         report += f"- **Total Listings:** {self.get_total_count()}\n"
+        if self.new_ids:
+            new_here = sum(1 for lst in self.listings if lst.job_id in self.new_ids)
+            report += f"- **New since last run:** {new_here}\n"
 
         salary_stats = self.get_salary_stats()
         if salary_stats["count"] > 0:
@@ -180,7 +198,8 @@ class JobAnalyzer:
         # Detailed listings
         report += "## Job Listings\n\n"
         for i, listing in enumerate(self.listings, 1):
-            report += f"### {i}. {listing.title}\n\n"
+            marker = " 🆕" if listing.job_id in self.new_ids else ""
+            report += f"### {i}. {listing.title}{marker}\n\n"
             report += f"**Company:** {listing.company}\n\n"
             report += f"**Location:** {listing.location}\n\n"
 
@@ -234,7 +253,7 @@ class JobAnalyzer:
                     listing.work_type,
                     listing.job_board,
                     listing.job_url,
-                    listing.posted_date or "",
+                    listing.posted_date.isoformat() if listing.posted_date else "",
                 ]
             )
         return buffer.getvalue().rstrip("\n")

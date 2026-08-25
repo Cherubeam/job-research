@@ -89,7 +89,10 @@ class ClaudeScraper:
             )
 
         save_cache(
-            cache_dir, cache_key, [lst.model_dump() for lst in listings], cache_duration_hours
+            cache_dir,
+            cache_key,
+            [lst.model_dump(mode="json") for lst in listings],
+            cache_duration_hours,
         )
         logger.info("Found %d listings (saved to cache)", len(listings))
         return listings

@@ -131,38 +131,22 @@ def filter_by_salary(listings: list[JobListing], minimum: int, maximum: int) -> 
     return kept
 
 
-def parse_posted_date(raw: str | None) -> date | None:
-    """Parse a listing's `posted_date`, or None if it is absent or unrecognised.
-
-    Sources agree on ISO dates often enough to be worth trying and never worth
-    relying on: the field is a free string, and the Claude backend passes
-    through whatever the page said.
-    """
-    if not raw:
-        return None
-    try:
-        return date.fromisoformat(str(raw)[:10])
-    except ValueError:
-        return None
-
-
 def filter_by_posted_within(
     listings: list[JobListing], days: int | None, *, today: date | None = None
 ) -> list[JobListing]:
     """Keep listings published within *days*. `None` disables the filter.
 
-    **Listings with no parseable date are kept**, the same call made for unknown
-    salaries: a source that omits the field should not have all its results
-    silently dropped. The Bundesagentur backend also applies this server-side
+    **Listings with no date are kept**, the same call made for unknown salaries:
+    a source that omits or free-texts the field (it is normalized to None at
+    construction) should not have all its results silently dropped. The Bundesagentur backend also applies this server-side
     via `veroeffentlichtseit`, so there it narrows the fetch rather than the
     result set.
     """
     if days is None:
         return listings
     cutoff = (today or date.today()) - timedelta(days=days)
-    kept = []
-    for listing in listings:
-        posted = parse_posted_date(listing.posted_date)
-        if posted is None or posted >= cutoff:
-            kept.append(listing)
-    return kept
+    return [
+        listing
+        for listing in listings
+        if listing.posted_date is None or listing.posted_date >= cutoff
+    ]

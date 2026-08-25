@@ -15,6 +15,7 @@ from job_research.sources import Backend, catalog
 from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
 from job_research.sources.bundesagentur import BundesagenturScraper
+from job_research.store import JobStore
 from job_research.scraper import ClaudeScraper, JobScraper
 from job_research.utils import generate_output_filename
 from ui.log_capture import LogCaptureHandler
@@ -24,6 +25,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger(__name__)
 
 _config = Config.from_env()
+_store = JobStore(_config.output.store_path)
 _scraper: JobScraper | None = None
 try:
     if _config.scraper_backend == ScraperBackend.JOBSPY:
@@ -84,6 +86,7 @@ def run_job_research(
     excluded_keywords: str = "",
     selected_sources: list[str] | None = None,
     posted_within_days: int | None = None,
+    only_new: bool = False,
 ) -> Generator[tuple[str, str, str, str | None], None, None]:
     """Run job research with given parameters. Yields (status_md, log_text, report_md, filepath)."""
     if not keywords.strip():
@@ -178,8 +181,15 @@ def run_job_research(
             max_jobs=_config.max_jobs_per_search,
             interleave=interleave_sites,
         )
-        analyzer = JobAnalyzer()
-        analyzer.add_listings(result.listings)
+        # Record before filtering to "new only": a listing you never display is
+        # still one you have now seen, and marking it otherwise would make it
+        # reappear as new on the next run.
+        diff = _store.record(result.listings)
+        new_ids = {lst.job_id for lst in diff.new}
+
+        shown_listings = diff.new if only_new else result.listings
+        analyzer = JobAnalyzer(new_ids=new_ids)
+        analyzer.add_listings(shown_listings)
 
         ext = "csv" if output_format == "csv" else "md"
         if output_format == "markdown":
@@ -195,20 +205,26 @@ def run_job_research(
         filepath.write_text(report, encoding="utf-8")
         logger.info("Report saved to %s", filepath)
 
-        shown = len(result.listings)
-        if result.truncated:
+        shown = len(shown_listings)
+        new_note = f" — {len(diff.new)} new since last run" if diff.new else " — nothing new"
+        if only_new:
+            status = (
+                f"**Done** — {len(diff.new)} new of {result.matched} matching listings. "
+                f"Saved to `{filename}`"
+            )
+        elif result.truncated:
             status = (
                 f"**Done** — Showing {shown} of {result.matched} matching listings "
                 f"(from {result.fetched} fetched). "
-                f"Increase `MAX_JOBS_PER_SEARCH` for more. Saved to `{filename}`"
+                f"Increase `MAX_JOBS_PER_SEARCH` for more.{new_note}. Saved to `{filename}`"
             )
         elif result.matched < result.fetched:
             status = (
                 f"**Done** — {shown} of {result.fetched} fetched listings match "
-                f"your salary and seniority filters. Saved to `{filename}`"
+                f"your filters{new_note}. Saved to `{filename}`"
             )
         else:
-            status = f"**Done** — Found {shown} listings. Saved to `{filename}`"
+            status = f"**Done** — Found {shown} listings{new_note}. Saved to `{filename}`"
 
         # Wrap CSV in a code fence so it renders in Markdown
         if output_format == "csv":
@@ -323,6 +339,11 @@ def create_ui() -> gr.Blocks:
                     gr.Markdown(_source_caveats())
 
                 with gr.Row():
+                    only_new = gr.Checkbox(
+                        label="Only listings new since the last run",
+                        value=False,
+                    )
+
                     interleave_sites = gr.Checkbox(
                         label="Interleave results from different job boards",
                         value=_config.interleave_sites,
@@ -408,6 +429,7 @@ def create_ui() -> gr.Blocks:
                 exclude_input,
                 source_input,
                 posted_within,
+                only_new,
             ],
             outputs=[status_output, log_output, results_output, download_file],
         )

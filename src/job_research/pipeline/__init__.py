@@ -26,7 +26,6 @@ from job_research.pipeline.filters import (
     filter_by_salary,
     filter_by_seniority,
     infer_seniority,
-    parse_posted_date,
 )
 from job_research.pipeline.interleave import interleave_by_site
 from job_research.pipeline.relevance import (
@@ -50,7 +49,6 @@ __all__ = [
     "identity",
     "infer_seniority",
     "interleave_by_site",
-    "parse_posted_date",
     "is_excluded",
     "normalize_location",
     "score_title",

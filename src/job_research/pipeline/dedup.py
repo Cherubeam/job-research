@@ -1,5 +1,8 @@
 """Cross-source deduplication.
 
+Normalization lives in `job_research.identity`, shared with the job store so a
+posting's dedup identity and its stored id can never drift apart.
+
 One implementation for every backend. Previously each scraper had its own and
 they disagreed: `ClaudeScraper` keyed on the URL alone (so one job cross-posted
 under two URLs survived twice), while `JobSpyScraper` keyed on title+company
@@ -12,33 +15,10 @@ different routes, the second catches the same job listed on Indeed and LinkedIn
 under different URLs.
 """
 
-import re
 from urllib.parse import urlparse, urlunparse
 
 from job_research.analyzer import JobListing
-
-# Gender markers German postings append to titles. They carry no meaning for
-# identity, and boards spell them inconsistently, so they are stripped before
-# comparison: "AI Engineer (m/w/d)" and "AI Engineer (all genders)" are one job.
-_GENDER_MARKERS = re.compile(
-    r"\(?\s*(m\s*[/|]\s*w\s*[/|]\s*d|w\s*[/|]\s*m\s*[/|]\s*d|m\s*[/|]\s*f\s*[/|]\s*d|"
-    r"m\s*[/|]\s*w\s*[/|]\s*x|gn|d\s*[/|]\s*m\s*[/|]\s*w|all\s+genders|divers)\s*\)?",
-    re.IGNORECASE,
-)
-
-# Country and region suffixes boards append inconsistently: one source says
-# "Berlin", another "Berlin, Germany", a third "Berlin, Berlin, Deutschland".
-# Without trimming these, the same posting looks like two jobs.
-_LOCATION_NOISE = frozenset(
-    {
-        "germany",
-        "deutschland",
-        "de",
-        "remote",
-        "hybrid",
-        "onsite",
-    }
-)
+from job_research.identity import identity_key, normalize_location  # noqa: F401  (re-exported)
 
 
 def _normalize_url(url: str) -> str:
@@ -48,32 +28,9 @@ def _normalize_url(url: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, path, parsed.params, parsed.query, ""))
 
 
-def _normalize_text(value: str) -> str:
-    value = _GENDER_MARKERS.sub(" ", value.lower())
-    return re.sub(r"[^\w]+", " ", value).strip()
-
-
-def normalize_location(location: str) -> str:
-    """Reduce a location to its most specific place name.
-
-    Boards disagree about how much administrative context to append, so only
-    the leading component is kept and country/work-mode noise is dropped.
-    "Berlin", "Berlin, Germany", and "Berlin, Berlin, Deutschland" all become
-    "berlin", while "Berlin" and "Munich" stay distinct.
-    """
-    head = location.split(",")[0]
-    normalized = _normalize_text(head)
-    words = [w for w in normalized.split() if w not in _LOCATION_NOISE]
-    return " ".join(words)
-
-
 def identity(listing: JobListing) -> tuple[str, str, str]:
     """The (title, company, location) triple that identifies one posting."""
-    return (
-        _normalize_text(listing.title),
-        _normalize_text(listing.company),
-        normalize_location(listing.location),
-    )
+    return identity_key(listing.title, listing.company, listing.location)
 
 
 def deduplicate(listings: list[JobListing]) -> list[JobListing]:
