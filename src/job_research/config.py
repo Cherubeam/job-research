@@ -1,6 +1,6 @@
 """Configuration management for job research tool"""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Optional
 from enum import Enum
@@ -96,6 +96,20 @@ class OutputConfig:
     email_recipient: Optional[str] = None
 
 
+def mask_secret(value: Optional[str]) -> str:
+    """Render a credential for display without revealing it.
+
+    Returned already quoted, so it drops straight into a repr. Anything short
+    enough that a prefix and suffix would give most of it away is hidden
+    entirely.
+    """
+    if not value:
+        return repr(value)
+    if len(value) <= 16:
+        return "'***'"
+    return f"'{value[:7]}…{value[-6:]}'"
+
+
 @dataclass
 class Config:
     """Main configuration class"""
@@ -151,6 +165,24 @@ class Config:
             max_jobs_per_search=int(os.getenv("MAX_JOBS_PER_SEARCH", "200")),
             interleave_sites=os.getenv("INTERLEAVE_SITES", "true").lower() == "true",
         )
+
+    def __repr__(self) -> str:
+        """Mask `claude_api_key`, so no traceback, log line, or bug report leaks it.
+
+        Built from `fields()` rather than written out, so it cannot drift as
+        fields are added. Note this protects incidental printing of the *config*;
+        `self.claude_api_key` is still the raw value for callers that need it.
+        """
+        rendered = [
+            f"{f.name}="
+            + (
+                mask_secret(self.claude_api_key)
+                if f.name == "claude_api_key"
+                else repr(getattr(self, f.name))
+            )
+            for f in fields(self)
+        ]
+        return f"{type(self).__name__}({', '.join(rendered)})"
 
     @classmethod
     def from_json(cls, filepath: Path) -> "Config":

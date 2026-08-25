@@ -96,3 +96,44 @@ def test_config_to_dict():
     assert "output" in d
     assert "keywords" in d["search_params"]
     assert "output_format" in d["output"]
+
+
+# ------------------------------------------------------- secret masking
+
+
+def test_repr_masks_the_api_key():
+    """A Config must never print its key: reprs reach tracebacks and CI logs."""
+    secret = "sk-ant-api03-" + "A" * 80 + "mPoQAA"
+    rendered = repr(Config(claude_api_key=secret))
+
+    assert secret not in rendered
+    assert "claude_api_key='sk-ant-…mPoQAA'" in rendered
+
+
+def test_repr_hides_short_secrets_entirely():
+    """Too short to show a prefix and suffix without giving most of it away."""
+    assert "claude_api_key='***'" in repr(Config(claude_api_key="sk-ant-short"))
+
+
+def test_repr_reports_a_missing_key_as_none():
+    assert "claude_api_key=None" in repr(Config(claude_api_key=None))
+
+
+def test_repr_still_shows_every_field():
+    """Generated from fields(), so a newly added field cannot silently vanish."""
+    from dataclasses import fields
+
+    rendered = repr(Config())
+    for f in fields(Config):
+        assert f"{f.name}=" in rendered
+
+
+def test_repr_survives_nesting_inside_another_object():
+    """The mask must hold wherever the Config ends up, not just at top level."""
+    secret = "sk-ant-api03-" + "B" * 80 + "zzTOP1"
+    assert secret not in repr({"config": Config(claude_api_key=secret)})
+
+
+def test_api_key_attribute_is_still_the_real_value():
+    secret = "sk-ant-api03-" + "C" * 80
+    assert Config(claude_api_key=secret).claude_api_key == secret

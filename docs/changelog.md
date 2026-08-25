@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `run_job_research()` is now a generator that streams status/log/result updates to the UI via a background thread.
 - CSV output wrapped in a code fence for proper Markdown display.
 
+### Security
+- `Config.__repr__` masks `claude_api_key` (`sk-ant-…mPoQAA`), so a traceback, log line, or bug report cannot leak it. Pytest's assertion repr was observed printing the key from a failing test that touched a `Config`.
+
 ### Fixed
 - Concurrent searches no longer overwrite each other's parameters (F4): two browser tabs could run each other's query.
 - CSV no longer corrupts fields containing quotes, commas, or newlines (F8).
