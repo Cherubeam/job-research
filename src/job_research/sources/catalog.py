@@ -52,7 +52,14 @@ class Source:
         return backend in self.backends
 
 
+# Google Jobs links out to the original posting — LinkedIn, a company careers
+# page, anywhere — so there is no single domain to recognise. The pattern only
+# matters for the Claude backend's URL validation, and Google is not reachable
+# that way, so a permissive one is honest rather than a fiction.
+_ANY_URL = re.compile(r"^https?://")
+
 _BOTH = frozenset({Backend.CLAUDE, Backend.JOBSPY})
+_JOBSPY_ONLY = frozenset({Backend.JOBSPY})
 _CLAUDE_ONLY = frozenset({Backend.CLAUDE})
 
 
@@ -84,6 +91,19 @@ _SOURCES: tuple[Source, ...] = (
             "Scraping breaches LinkedIn's User Agreement and is heavily rate-limited; "
             "a block returns partial results that look like a thin search. Off by "
             "default — see docs/decisions/002-linkedin-scraping.md."
+        ),
+    ),
+    Source(
+        id="google",
+        label="Google Jobs",
+        domain="google.com",
+        backends=_JOBSPY_ONLY,
+        jobspy_site="google",
+        job_url_pattern=_ANY_URL,
+        caveat=(
+            "Aggregates postings from many boards, but reaches them by querying "
+            "Google Search automatically, which Google's terms restrict. Off by "
+            "default — see docs/decisions/003-google-jobs.md."
         ),
     ),
     Source(

@@ -25,7 +25,13 @@ _JOB_TYPE_MAP = {
 
 
 class JobSpyScraper:
-    """Scrapes Indeed + LinkedIn via python-jobspy (no API key needed)."""
+    """Fetches from the boards python-jobspy reaches (no API key needed).
+
+    Which boards is decided by the source registry, not here. jobspy composes
+    the Google Jobs query itself from `search_term` and `location`, so that
+    source needs no special handling — `google_search_term` exists only to
+    override the whole query and is deliberately left unset.
+    """
 
     def __init__(self, max_jobs: int = 20, country: str = "Germany") -> None:
         self._max_jobs = max_jobs
@@ -50,6 +56,8 @@ class JobSpyScraper:
         """
         sites = self._sites_for(params)
 
+        hours_old = params.posted_within_days * 24 if params.posted_within_days else None
+
         cache_key = create_cache_key(
             "jobspy",
             keywords=params.keywords,
@@ -57,13 +65,14 @@ class JobSpyScraper:
             work_type=params.work_type.value,
             sites=tuple(sites),
             results_wanted=self._results_wanted,
+            hours_old=hours_old,
         )
         cached = load_cache(cache_dir, cache_key)
         if cached is not None:
             logger.info("Cache hit for key %s (%d listings)", cache_key, len(cached))
             return [JobListing(**item) for item in cached]
 
-        listings = self._scrape(params, sites)
+        listings = self._scrape(params, sites, hours_old)
 
         if not listings:
             raise RuntimeError(
@@ -99,7 +108,9 @@ class JobSpyScraper:
             )
         return sites
 
-    def _scrape(self, params: JobSearchParams, sites: list[str]) -> list[JobListing]:
+    def _scrape(
+        self, params: JobSearchParams, sites: list[str], hours_old: int | None = None
+    ) -> list[JobListing]:
         """Call jobspy and convert results to JobListing objects."""
         location = params.location if params.location != "All of Germany" else "Germany"
         job_type, is_remote = self._map_work_type(params)
@@ -118,6 +129,11 @@ class JobSpyScraper:
             "linkedin_fetch_description": False,
             "verbose": 2,
         }
+        # Narrow the fetch rather than the results, as the Bundesagentur backend
+        # does with `veroeffentlichtseit`. The pipeline still filters afterwards,
+        # since not every source honours this.
+        if hours_old is not None:
+            kwargs["hours_old"] = hours_old
         if job_type is not None:
             kwargs["job_type"] = job_type
         if is_remote is not None:

@@ -36,6 +36,13 @@ def test_every_backend_can_reach_at_least_one_default_source():
         assert resolved, f"{backend.value} has no default-on source it can reach"
 
 
+def test_google_jobs_is_off_by_default_and_carries_its_caveat():
+    """ADR-003: querying Google Search automatically is restricted by its terms."""
+    source = catalog.get("google")
+    assert not source.default_enabled
+    assert "003-google-jobs" in source.caveat
+
+
 def test_default_on_sources():
     """Indeed and Arbeitsagentur. LinkedIn stays opt-in per ADR-002."""
     assert catalog.DEFAULT_ENABLED == frozenset({"indeed", "arbeitsagentur"})
@@ -70,7 +77,7 @@ def test_get_raises_a_helpful_error_for_an_unknown_id():
 def test_for_backend_filters_by_capability():
     jobspy_ids = {s.id for s in catalog.for_backend(Backend.JOBSPY)}
     claude_ids = {s.id for s in catalog.for_backend(Backend.CLAUDE)}
-    assert jobspy_ids == {"indeed", "linkedin"}
+    assert jobspy_ids == {"indeed", "linkedin", "google"}
     assert "stepstone" in claude_ids
     assert "stepstone" not in jobspy_ids
 

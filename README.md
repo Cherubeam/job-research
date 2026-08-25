@@ -21,7 +21,7 @@ Job Research Tool aggregates job listings from German job boards through two ind
 - **Relevance Scoring**: Titles are scored against your keywords and alternatives, with a configurable threshold and a negative-keyword list
 - **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
 - **Salary Normalization**: Hourly and monthly pay annualised so filters and statistics compare like with like. Bundesagentur supplies structured amounts with an explicit period; other sources are parsed from free text
-- **Recency Filter**: "Posted within N days", applied server-side by Bundesagentur and locally elsewhere
+- **Recency Filter**: "Posted within N days", narrowing the fetch itself on Bundesagentur (`veroeffentlichtseit`) and jobspy (`hours_old`), with a local filter as backstop
 - **Run-over-Run Tracking**: A local SQLite store remembers every posting seen, so each run can tell you what is **new since last time** — and show only those
 - **Multi-Source Interleaving**: Results from different boards are round-robin mixed before truncation, so one board cannot crowd out the rest
 - **Cross-Source Deduplication**: One rule for every backend — normalized URL, then title + company + location — merging duplicates into one entry that keeps every board's link
@@ -162,6 +162,7 @@ Gradio UI → run_job_research() → Orchestrator
 |---|---|---|---|
 | Indeed.de | yes | yes | on |
 | LinkedIn | yes | yes | off — see [ADR-002](docs/decisions/002-linkedin-scraping.md) |
+| Google Jobs | — | yes | off — see [ADR-003](docs/decisions/003-google-jobs.md) |
 | StepStone.de | yes | — | off |
 | Monster.de | yes | — | off |
 | Honeypot.io | yes | — | off |
@@ -252,7 +253,7 @@ to assert the new behaviour rather than working around it.
 ## Docs
 
 - [Architecture Review & Refactor Plan](docs/architecture-review.md)
-- [Decision Records](docs/decisions/)
+- [Decision Records](docs/decisions/) — [ADR-001 Bundesagentur](docs/decisions/001-bundesagentur-terms-of-use.md), [ADR-002 LinkedIn](docs/decisions/002-linkedin-scraping.md), [ADR-003 Google Jobs](docs/decisions/003-google-jobs.md)
 - [Setup Guide](docs/setup.md)
 - [Project Structure](docs/project-structure.md)
 - [Scraper Design](docs/scraper-design.md)

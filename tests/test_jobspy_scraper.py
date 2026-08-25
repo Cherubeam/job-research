@@ -424,3 +424,67 @@ class TestWorkTypeMapping:
         params = JobSearchParams(work_type=WorkType.ONSITE)
         job_type, is_remote = scraper._map_work_type(params)
         assert is_remote is False
+
+
+class TestRecencyFilter:
+    """posted_within_days narrows the fetch, not just the results."""
+
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_posted_within_days_becomes_hours_old(
+        self, mock_scrape, scraper: JobSpyScraper, sample_jobspy_dataframe, tmp_cache_dir
+    ) -> None:
+        mock_scrape.return_value = sample_jobspy_dataframe
+        params = JobSearchParams(keywords="AI Engineer", posted_within_days=7)
+
+        scraper.search_jobs(params, tmp_cache_dir)
+
+        assert mock_scrape.call_args[1]["hours_old"] == 168
+
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_no_recency_window_passes_no_filter(
+        self, mock_scrape, scraper: JobSpyScraper, sample_jobspy_dataframe, tmp_cache_dir
+    ) -> None:
+        mock_scrape.return_value = sample_jobspy_dataframe
+        scraper.search_jobs(JobSearchParams(keywords="AI Engineer"), tmp_cache_dir)
+
+        assert "hours_old" not in mock_scrape.call_args[1]
+
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_recency_window_is_part_of_the_cache_key(
+        self, mock_scrape, scraper: JobSpyScraper, sample_jobspy_dataframe, tmp_cache_dir
+    ) -> None:
+        """It changes the fetch, so it must not replay a wider cached result."""
+        mock_scrape.return_value = sample_jobspy_dataframe
+        scraper.search_jobs(JobSearchParams(keywords="AI Engineer"), tmp_cache_dir)
+        scraper.search_jobs(
+            JobSearchParams(keywords="AI Engineer", posted_within_days=7), tmp_cache_dir
+        )
+
+        assert mock_scrape.call_count == 2
+
+
+class TestGoogleJobs:
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_google_is_requested_when_selected(
+        self, mock_scrape, scraper: JobSpyScraper, sample_jobspy_dataframe, tmp_cache_dir
+    ) -> None:
+        """Selection order is preserved — it decides precedence before interleaving."""
+        mock_scrape.return_value = sample_jobspy_dataframe
+        params = JobSearchParams(keywords="AI Engineer", enabled_sources=["google", "indeed"])
+
+        scraper.search_jobs(params, tmp_cache_dir)
+
+        assert mock_scrape.call_args[1]["site_name"] == ["google", "indeed"]
+
+    @patch("job_research.jobspy_scraper.scrape_jobs")
+    def test_google_search_term_is_left_unset(
+        self, mock_scrape, scraper: JobSpyScraper, sample_jobspy_dataframe, tmp_cache_dir
+    ) -> None:
+        """jobspy composes the query from search_term + location; overriding it
+        with google_search_term would discard the location."""
+        mock_scrape.return_value = sample_jobspy_dataframe
+        params = JobSearchParams(keywords="AI Engineer", enabled_sources=["google"])
+
+        scraper.search_jobs(params, tmp_cache_dir)
+
+        assert "google_search_term" not in mock_scrape.call_args[1]

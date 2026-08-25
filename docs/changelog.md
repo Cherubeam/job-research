@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Google Jobs** as an opt-in source (`ENABLED_SOURCES=...,google`). An aggregator, so it reaches postings from boards this tool has no other route to. Off by default — see [ADR-003](decisions/003-google-jobs.md): it works by querying Google Search automatically, which Google's terms restrict.
+- The recency window now narrows the **jobspy fetch** too, via `hours_old`, matching what the Bundesagentur backend already did with `veroeffentlichtseit`.
 - **Multi-source orchestration** (`src/job_research/orchestrator.py`). Every selected source is now searched in one run: each is assigned to a backend that can reach it, the backends run concurrently, and results merge into one pipeline. Previously `SCRAPER_BACKEND` picked one backend and everything else was unreachable that run — with Indeed and the Bundesagentur both on by default, you got one of them.
 - **Per-source health.** Each run reports what every source returned, failed with, or was skipped for. A failing source is visible in the status line and in a `## Sources` section of the report, instead of looking like a quiet job market. One failing source no longer sinks the whole search.
 - **Merged provenance.** Deduplication no longer discards the duplicate: its board and URL are recorded on the survivor's `alternates`, and the report shows "Also on: …". `JobListing.boards` lists every board carrying a posting.
