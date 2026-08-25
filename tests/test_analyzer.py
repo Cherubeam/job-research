@@ -23,25 +23,39 @@ def test_add_listing():
     analyzer = JobAnalyzer()
     listing = JobListing(title="Engineer", company="Co", location="Berlin")
     analyzer.add_listing(listing)
-    assert analyzer.get_total_count() == 1
+    assert analyzer.listings == [listing]
 
 
-def test_add_listings():
+def test_add_listings_preserves_order():
     analyzer = JobAnalyzer()
-    listings = [
-        JobListing(title="A", company="X", location="Berlin"),
-        JobListing(title="B", company="Y", location="Munich"),
-    ]
-    analyzer.add_listings(listings)
-    assert analyzer.get_total_count() == 2
+    first = JobListing(title="A", company="X", location="Berlin")
+    second = JobListing(title="B", company="Y", location="Munich")
+    analyzer.add_listings([first, second])
+    assert analyzer.listings == [first, second]
 
 
 def test_get_salary_stats(analyzer_with_listings):
+    # Midpoints: 100000, 85000, 92500 -> mean 92500, median 92500
     stats = analyzer_with_listings.get_salary_stats()
-    assert stats["count"] == 3
-    assert stats["average"] is not None
-    assert stats["median"] is not None
-    assert stats["min"] <= stats["max"]
+    assert stats == {
+        "count": 3,
+        "average": 92500.0,
+        "median": 92500.0,
+        "min": 85000.0,
+        "max": 100000.0,
+    }
+
+
+def test_get_salary_stats_ignores_listings_without_both_bounds():
+    analyzer = JobAnalyzer()
+    analyzer.add_listings([
+        JobListing(title="A", salary_min=60000, salary_max=80000),
+        JobListing(title="B", salary_min=60000),  # max missing -> excluded
+        JobListing(title="C"),                    # both missing -> excluded
+    ])
+    stats = analyzer.get_salary_stats()
+    assert stats["count"] == 1
+    assert stats["average"] == 70000.0
 
 
 def test_get_salary_stats_empty():
@@ -59,10 +73,26 @@ def test_get_listings_by_board(analyzer_with_listings):
 
 def test_generate_markdown_report(analyzer_with_listings):
     report = analyzer_with_listings.generate_markdown_report("Test Report")
-    assert len(report) > 0
-    assert "Test Report" in report
-    assert "## Summary" in report
-    assert "## Job Listings" in report
+    assert report.startswith("# Test Report\n")
+    assert "- **Total Listings:** 3\n" in report
+    assert "- **Average Salary:** \u20ac92,500\n" in report
+    assert "- **Salary Range:** \u20ac85,000 - \u20ac100,000\n" in report
+    # Boards sorted by count, descending
+    assert report.index("**StepStone:** 2") < report.index("**LinkedIn:** 1")
+    # Every listing rendered, numbered, with its salary and link-free fields
+    assert "### 1. AI Engineer\n" in report
+    assert "### 2. ML Engineer\n" in report
+    assert "### 3. Data Scientist\n" in report
+    assert "**Salary:** \u20ac80,000 - \u20ac120,000\n" in report
+
+
+def test_generate_markdown_report_omits_salary_line_when_absent():
+    analyzer = JobAnalyzer()
+    analyzer.add_listing(JobListing(title="No Salary Job", company="Co"))
+    report = analyzer.generate_markdown_report()
+    assert "### 1. No Salary Job\n" in report
+    assert "**Salary:**" not in report
+    assert "- **Average Salary:**" not in report
 
 
 def test_generate_csv_report(analyzer_with_listings):
