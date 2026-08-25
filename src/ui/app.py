@@ -387,16 +387,26 @@ def create_ui() -> gr.Blocks:
                     """
                 ## About This Tool
 
-                Searches German job boards for AI/ML roles through one of two
-                backends, selected with `SCRAPER_BACKEND` in your `.env`.
+                Searches German job boards for AI/ML roles. **Every selected
+                source is searched in one run**, each through whichever backend
+                can reach it, and the results are merged and deduplicated.
 
                 ### Backends
-                - **`jobspy`** — queries Indeed and LinkedIn directly via
-                  python-jobspy. No API key needed.
-                - **`claude`** — uses the Anthropic Claude API with the
-                  `web_search_20250305` tool, restricted to the boards enabled by
-                  the `SEARCH_*` variables. Requires `CLAUDE_API_KEY`. Costs money
-                  per search.
+                - **jobspy** — Indeed (and LinkedIn, if enabled). No API key.
+                - **bundesagentur** — the federal job board's own API. No API key.
+                  The largest German corpus, and the only source with structured
+                  salary. Unofficial endpoint — see `docs/decisions/001-...`.
+                - **claude** — Anthropic web search, restricted per source.
+                  Reaches boards the other two cannot (StepStone, Monster,
+                  Honeypot, startup.jobs). Requires `CLAUDE_API_KEY` and costs
+                  money per search, so it is used only where nothing free can
+                  reach the source.
+
+                `SCRAPER_BACKEND` sets a *preference*: it wins wherever it can
+                serve a source, and the rest fall back to whatever can.
+
+                Each run reports what every source returned, so a source that
+                failed is visible rather than looking like a quiet job market.
 
                 ### How filters are applied
                 - **Location** and **work type** are passed to the backend and
@@ -423,6 +433,12 @@ def create_ui() -> gr.Blocks:
 
                 Because salary and seniority are applied after the fetch, changing
                 them re-filters the cached results instead of re-running the search.
+
+                ### What's new
+                Every posting seen is recorded locally, so each run marks which
+                listings are 🆕 since last time — and "Only listings new since the
+                last run" narrows the report to those. Postings found on several
+                boards are merged into one entry that keeps every link.
 
                 ### Caching
                 Fetches are cached for 24h, keyed only on what the backend

@@ -6,10 +6,9 @@
 
 ---
 
-> **Progress:** Phases 0-4 and 5a are merged. Every finding from the original
-> review is resolved. What remains is Phase 5b (where job *status* lives —
-> deliberately deferred until 5a has been used for a while) and Phase 6
-> (multi-backend orchestration).
+> **Progress:** Phases 0-4, 5a, and 6 are merged. Every finding from the original
+> review is resolved. The only remaining phase is 5b (where job *status* lives),
+> deliberately deferred until the store has been used for a while.
 >
 > **Note on the run diff:** the plan said "new / still open / disappeared".
 > Disappearance was dropped: a posting absent from today's results may simply
@@ -354,7 +353,7 @@ boards said and when*. Neither has to know much about the other — the seam is
 want triage inside the tool. The cost of deferring is one interface
 (`Destination.write(new_jobs)` / `read_statuses()`), and 5a is not blocked on it.
 
-### Phase 6 — Multi-backend orchestration · *medium*
+### Phase 6 — Multi-backend orchestration · *medium* — **DONE**
 
 - Run all enabled sources concurrently and merge through one pipeline.
 - Cross-source dedup becomes load-bearing here: the same job appears on Indeed,

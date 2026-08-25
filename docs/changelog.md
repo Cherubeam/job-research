@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-source orchestration** (`src/job_research/orchestrator.py`). Every selected source is now searched in one run: each is assigned to a backend that can reach it, the backends run concurrently, and results merge into one pipeline. Previously `SCRAPER_BACKEND` picked one backend and everything else was unreachable that run — with Indeed and the Bundesagentur both on by default, you got one of them.
+- **Per-source health.** Each run reports what every source returned, failed with, or was skipped for. A failing source is visible in the status line and in a `## Sources` section of the report, instead of looking like a quiet job market. One failing source no longer sinks the whole search.
+- **Merged provenance.** Deduplication no longer discards the duplicate: its board and URL are recorded on the survivor's `alternates`, and the report shows "Also on: …". `JobListing.boards` lists every board carrying a posting.
+- `tests/test_orchestrator.py` — backend assignment, concurrent fan-out, partial failure, and count attribution.
 - **Run-over-run tracking.** `src/job_research/store.py` — a SQLite store recording every posting seen, with `first_seen`/`last_seen`, so each run reports what is new. New listings are marked 🆕 in the report, and an "Only listings new since the last run" checkbox shows just those.
 - `src/job_research/identity.py` — stable, readable job ids (`ai-engineer-acme-gmbh-berlin-d060f925`) derived from normalized title + company + location, never from the URL. Same posting, same id, across runs and across sources.
 - `STORE_PATH` env var (default `data/jobs.db`).
@@ -38,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- `SCRAPER_BACKEND` is now a *preference* rather than an exclusive choice: it wins wherever it can serve a source, and everything else falls back to whatever can. Free backends are preferred over Claude, which costs money per search.
+- Research notes in `research/` corrected: the Bundesagentur endpoint is `pc/v6` (v4 was retired server-side and every example 404'd), the sample code reads `ergebnisliste`, and each document carries a status banner marking what the implementation has superseded.
 - `JobListing.posted_date` is now a `date` rather than a free string; unparseable values become `None` instead of failing the listing. Date parsing lives in `utils.parse_date`, used by every source.
 - Deduplication normalization moved to `identity.py`, shared with the store so a posting's dedup identity and its stored id cannot drift apart.
 - Bundesagentur postings restrict to `angebotsart=1` (ARBEIT), excluding apprenticeships, dual study places, and self-employment offers.

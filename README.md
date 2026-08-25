@@ -14,7 +14,9 @@ Job Research Tool aggregates job listings from German job boards through two ind
 
 ## Features
 
-- **Three Scraper Backends**: python-jobspy, the Bundesagentur für Arbeit API, and Claude API web search — one selected per run via `SCRAPER_BACKEND`
+- **Multi-Source Search**: every selected source is searched in **one run**, each through whichever backend can reach it, running concurrently
+- **Three Scraper Backends**: python-jobspy, the Bundesagentur für Arbeit API, and Claude API web search
+- **Per-Source Health**: each run reports what every source returned, so a failing source is visible rather than looking like a quiet market
 - **Source Registry**: One place declares every board, which backends can reach it, and how to recognise its listing URLs. The UI offers only sources the active backend can actually search
 - **Relevance Scoring**: Titles are scored against your keywords and alternatives, with a configurable threshold and a negative-keyword list
 - **Post-Fetch Filters**: Salary by range overlap, seniority inferred from the job title
@@ -22,7 +24,7 @@ Job Research Tool aggregates job listings from German job boards through two ind
 - **Recency Filter**: "Posted within N days", applied server-side by Bundesagentur and locally elsewhere
 - **Run-over-Run Tracking**: A local SQLite store remembers every posting seen, so each run can tell you what is **new since last time** — and show only those
 - **Multi-Source Interleaving**: Results from different boards are round-robin mixed before truncation, so one board cannot crowd out the rest
-- **Cross-Source Deduplication**: One rule for every backend — normalized URL, then title + company + location
+- **Cross-Source Deduplication**: One rule for every backend — normalized URL, then title + company + location — merging duplicates into one entry that keeps every board's link
 - **Data Analysis**: Salary statistics and distribution by board, location, and work type
 - **Multiple Export Formats**: Reports in Markdown or CSV
 - **Smart Caching**: 24h cache keyed only on what the backend actually received, so adjusting salary or seniority re-filters instead of re-fetching
@@ -97,7 +99,11 @@ SALARY_MAXIMUM=200000
 
 ## Architecture
 
-The tool uses a **dual-backend design** to maximize coverage and reliability:
+Sources are searched **together, not one backend at a time**. Each enabled source
+is assigned to a backend that can reach it; the backends run concurrently and
+their results merge into a single pipeline. `SCRAPER_BACKEND` sets a preference,
+not an exclusive choice — it wins wherever it can serve a source, and free
+backends are preferred over the metered one for everything else.
 
 - **JobSpyScraper** — queries Indeed (and LinkedIn, if enabled) via python-jobspy. Free, no key, but relies on site structure staying put.
 - **BundesagenturScraper** — the federal job board's own search endpoint. Free, no key, the largest German corpus, and the only source here that exposes **structured salary** and server-side recency filtering. Unofficial endpoint — read [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) before enabling.
@@ -139,9 +145,9 @@ Reporting that soundly needs per-query history, so the store reports *new* and
 *returning* and stays quiet rather than guessing.
 
 ```
-Gradio UI → run_job_research()
-               ├── JobSpyScraper.search_jobs()        ─┐  (cached: full fetch)
-               ├── BundesagenturScraper.search_jobs() ─┤
+Gradio UI → run_job_research() → Orchestrator
+               ├── JobSpyScraper.search_jobs()        ─┐  (concurrent;
+               ├── BundesagenturScraper.search_jobs() ─┤   cached: full fetch)
                └── ClaudeScraper.search_jobs()        ─┤
                                                  ▼
                                           pipeline.apply()
@@ -168,9 +174,8 @@ than the two columns above.)
 Selecting a source the active backend cannot reach searches less rather than
 failing; selecting nothing it can reach fails loudly.
 
-Remaining work is tracked in the [architecture review](docs/architecture-review.md):
-where job *status* (interested / applied / rejected) should live is deliberately
-still open — see Phase 5b.
+Where job *status* (interested / applied / rejected) should live is deliberately
+still open — see Phase 5b in the [architecture review](docs/architecture-review.md).
 
 ## Project Structure
 
@@ -187,6 +192,7 @@ job-research/
 │   │   ├── salary.py           # Salary parsing and annualisation
 │   │   ├── identity.py         # Stable, readable job ids
 │   │   ├── store.py            # SQLite store: what has been seen, and when
+│   │   ├── orchestrator.py     # Fans a search across backends, reports health
 │   │   ├── analyzer.py         # Job analysis and reporting
 │   │   └── utils.py            # Caching, formatting, parsing
 │   └── ui/
