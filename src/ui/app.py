@@ -83,8 +83,17 @@ def _source_choices() -> list[tuple[str, str]]:
 
 
 def _source_caveats() -> str:
-    """Markdown footnotes for sources that carry a caveat."""
-    return "\n".join(f"- **{s.label}** — {s.caveat}" for s in _selectable_sources() if s.caveat)
+    """Legend for the ⚠ marker, rendered directly under the source picker.
+
+    The marker is useless without the explanation next to it, so this leads with
+    the symbol rather than describing the sources in the abstract.
+    """
+    flagged = [s for s in _selectable_sources() if s.caveat]
+    if not flagged:
+        return ""
+    lines = ["**⚠ — read before enabling:**", ""]
+    lines += [f"- **{s.label}** — {s.caveat}" for s in flagged]
+    return "\n".join(lines)
 
 
 def run_job_research(
@@ -339,16 +348,22 @@ def create_ui() -> gr.Blocks:
                         info="Leave empty for no limit. Listings with no date are kept.",
                     )
 
-                    source_input = gr.CheckboxGroup(
-                        label="Job Sources",
-                        choices=_source_choices(),
-                        value=[
-                            s
-                            for s in _config.search_params.enabled_sources
-                            if s in {sid for _, sid in _source_choices()}
-                        ],
-                        info="All selected sources are searched in one run.",
-                    )
+                    with gr.Column(scale=1):
+                        source_input = gr.CheckboxGroup(
+                            label="Job Sources",
+                            choices=_source_choices(),
+                            value=[
+                                s
+                                for s in _config.search_params.enabled_sources
+                                if s in {sid for _, sid in _source_choices()}
+                            ],
+                            info="All selected sources are searched in one run.",
+                        )
+                        # Directly beneath the checkboxes: a legend placed below
+                        # the whole row reads as unrelated to the ⚠ beside it.
+                        if _source_caveats():
+                            with gr.Accordion("⚠ About the flagged sources", open=False):
+                                gr.Markdown(_source_caveats())
 
                     exclude_input = gr.Textbox(
                         label="Exclude titles containing",
@@ -356,9 +371,6 @@ def create_ui() -> gr.Blocks:
                         info="Comma-separated. Matched on whole words.",
                         value=", ".join(_config.search_params.excluded_keywords),
                     )
-
-                if _source_caveats():
-                    gr.Markdown(_source_caveats())
 
                 with gr.Row():
                     only_new = gr.Checkbox(
