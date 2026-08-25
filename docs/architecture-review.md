@@ -133,7 +133,7 @@ exposes no `total_found`, so [app.py:149](../src/ui/app.py)'s
 `getattr(_scraper, "total_found", …)` reports differently depending on which
 backend is active.
 
-### F11 — No stable identity, no persistence (Phase 5)
+### F11 — No stable identity, no persistence (Phase 5a)
 
 `JobListing` has no id, no `source_id`, and `posted_date` is an unparsed `str`.
 Each run writes a timestamped file and forgets everything. Nothing can answer
@@ -292,17 +292,49 @@ slip.
 - Tests run against recorded JSON fixtures; no live HTTP in the suite. A separate
   `scripts/probe_bundesagentur.py` handles manual calibration.
 
-### Phase 5 — Persistence and run-over-run tracking · *large; the payoff*
+### Phase 5a — Seen-state store · *medium; the payoff*
 
-- `JobListing` gains `job_id` (stable hash: normalized source URL, else
+Everything here is needed no matter where triage eventually happens.
+
+- `JobListing` gains `job_id` (stable id: normalized source URL, else
   source+`source_id`, else normalized company+title+location), `source`,
-  `first_seen`, `last_seen`, `status`.
+  `first_seen`, `last_seen`.
 - `posted_date` becomes `date | None` with per-source parsing.
 - `store.py`: SQLite at `data/jobs.db` — stdlib, no new dependency, and it
   survives concurrent reads better than a JSON file.
 - Run diff: **new** / still open / disappeared since the previous run.
-- UI: "New since last run" as the default view; per-listing status controls
-  (seen / applied / rejected); dismissed jobs suppressed from future runs.
+- UI: "New since last run" as the default view.
+
+**`job_id` must be human-tolerable, not a raw hash.** It is the one decision here
+that is expensive to reverse: if jobs later become files in a vault (see 5b), the
+id becomes the filename. Prefer a readable slug with a short hash suffix —
+`ai-engineer-siemens-berlin-a3f2c1` — over a bare digest.
+
+### Phase 5b — Triage destination · *deferred; decide after 5a runs for a while*
+
+Where a job's *status* lives (interested / applied / rejected) is undecided, and
+5a is deliberately built so it can stay that way. Three viable answers:
+
+1. **In-app triage.** `status` column in the store, buttons in the Gradio UI,
+   dismissed jobs suppressed from later runs. Self-contained; means living in the
+   Gradio UI to do the triage.
+2. **Obsidian (or any Markdown vault) as the destination.** Each new job is
+   written as a note with YAML frontmatter (`company`, `location`, `salary`,
+   `posted`, `source_url`, `status: new`). Triage happens by editing frontmatter
+   in Obsidian; the tool reads it back on the next run to suppress what you have
+   already rejected. Dataview then gives you boards and queries for free, and
+   application notes live next to the job they belong to.
+3. **Export only, no status.** Write new jobs out, track nothing but `first_seen`,
+   and triage wherever you like with no round-trip.
+
+Option 2 inverts the design pleasantly: the vault becomes the system of record
+for *your* judgement, the SQLite store stays the system of record for *what the
+boards said and when*. Neither has to know much about the other — the seam is
+`job_id`.
+
+**Do not decide this now.** Run 5a for a few weeks and see whether you actually
+want triage inside the tool. The cost of deferring is one interface
+(`Destination.write(new_jobs)` / `read_statuses()`), and 5a is not blocked on it.
 
 ### Phase 6 — Multi-backend orchestration · *medium*
 
@@ -330,6 +362,10 @@ slip.
 
 Phase 0 → 1 deliver visible improvement within a small change budget and are
 worth doing regardless of what follows. Phase 2 is the structural unlock — every
-later phase is materially cheaper once the pipeline exists. Phase 5 is the reason
+later phase is materially cheaper once the pipeline exists. Phase 5a is the reason
 the project exists as a *tool* rather than a script, but it depends on the stable
 identity that Phase 2's unified dedup establishes.
+
+Phase 5b is deliberately open. Build 5a, live with it for a few weeks, and let
+actual use decide whether triage belongs in the app, in a Markdown vault, or
+nowhere. Nothing upstream is blocked on that answer.
