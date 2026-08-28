@@ -3,7 +3,16 @@
 import json
 from pathlib import Path
 
-from job_research.config import Config, JobSearchParams, WorkType
+import pytest
+
+from job_research.config import (
+    SECRET_FIELDS,
+    Config,
+    JobSearchParams,
+    LLMProvider,
+    ScraperBackend,
+    WorkType,
+)
 from job_research.sources import catalog
 
 
@@ -132,19 +141,22 @@ def test_config_to_dict():
     assert set(d["search_params"]["enabled_sources"]) == set(catalog.DEFAULT_ENABLED)
 
 
-def test_config_to_dict_covers_every_field_except_the_secret():
+def test_config_to_dict_covers_every_field_except_the_secrets():
     """Generated from fields(), so a new field cannot go missing the way four did."""
     from dataclasses import fields
 
     d = Config().to_dict()
-    expected = {f.name for f in fields(Config)} - {"claude_api_key"}
+    expected = {f.name for f in fields(Config)} - SECRET_FIELDS
     assert set(d) == expected
 
 
-def test_config_to_dict_excludes_the_api_key():
-    d = Config(claude_api_key="sk-ant-secret").to_dict()
-    assert "claude_api_key" not in d
-    assert "sk-ant-secret" not in json.dumps(d)
+def test_config_to_dict_excludes_every_api_key():
+    d = Config(claude_api_key="sk-ant-secret", openrouter_api_key="sk-or-secret").to_dict()
+    serialized = json.dumps(d)
+    assert "sk-ant-secret" not in serialized
+    assert "sk-or-secret" not in serialized
+    for name in SECRET_FIELDS:
+        assert name not in d
 
 
 def test_config_to_dict_is_json_serializable():
@@ -191,3 +203,69 @@ def test_repr_survives_nesting_inside_another_object():
 def test_api_key_attribute_is_still_the_real_value():
     secret = "sk-ant-api03-" + "C" * 80
     assert Config(claude_api_key=secret).claude_api_key == secret
+
+
+def test_every_credential_field_is_listed_as_a_secret():
+    """The masking is generated, but SECRET_FIELDS is hand-maintained. A provider
+    added without listing its key would leak it into reprs and to_dict()."""
+    from dataclasses import fields
+
+    credential_fields = {f.name for f in fields(Config) if f.name.endswith("_api_key")}
+    assert credential_fields <= SECRET_FIELDS
+
+
+def test_repr_masks_the_openrouter_key_too():
+    secret = "sk-or-v1-" + "D" * 80 + "wq77ZZ"
+    rendered = repr(Config(openrouter_api_key=secret))
+
+    assert secret not in rendered
+    assert "openrouter_api_key='sk-or-v…wq77ZZ'" in rendered
+
+
+# ------------------------------------------------------- provider selection
+
+
+def test_openrouter_is_the_default_provider():
+    config = Config()
+    assert config.llm_provider is LLMProvider.OPENROUTER
+    assert config.openrouter_model == "anthropic/claude-haiku-4.5"
+    assert config.scraper_backend is ScraperBackend.LLM
+
+
+def test_provider_settings_are_read_from_env(monkeypatch):
+    monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+    monkeypatch.setenv("OPENROUTER_SEARCH_RESULTS", "4")
+    monkeypatch.setenv("OPENROUTER_SEARCH_ENGINE", "exa")
+
+    config = Config.from_env()
+
+    assert config.llm_provider is LLMProvider.ANTHROPIC
+    assert config.openrouter_api_key == "sk-or-test"
+    assert config.openrouter_model == "google/gemini-3.5-flash"
+    assert config.openrouter_search_results == 4
+    assert config.openrouter_search_engine == "exa"
+
+
+def test_blank_search_engine_means_unset(monkeypatch):
+    """An empty var in .env must mean "let OpenRouter choose", not engine=""."""
+    monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
+    monkeypatch.setenv("OPENROUTER_SEARCH_ENGINE", "")
+    assert Config.from_env().openrouter_search_engine is None
+
+
+def test_legacy_claude_backend_still_selects_the_llm_backend(monkeypatch):
+    """An existing .env says SCRAPER_BACKEND=claude; it must keep working."""
+    monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
+    monkeypatch.setenv("SCRAPER_BACKEND", "claude")
+    assert Config.from_env().scraper_backend is ScraperBackend.LLM
+
+
+def test_unknown_backend_still_raises(monkeypatch):
+    """The `claude` alias must not turn every typo into a silent fallback."""
+    monkeypatch.setattr("job_research.config.load_dotenv", lambda: None)
+    monkeypatch.setenv("SCRAPER_BACKEND", "gpt")
+    with pytest.raises(ValueError):
+        Config.from_env()

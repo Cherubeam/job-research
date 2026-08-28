@@ -10,14 +10,15 @@ from dataclasses import replace
 import gradio as gr
 
 from job_research import pipeline
-from job_research.config import Config, ScraperBackend, SeniorityLevel, WorkType
+from job_research.config import Config, LLMProvider, ScraperBackend, SeniorityLevel, WorkType
 from job_research.sources import Backend, catalog
 from job_research.analyzer import JobAnalyzer
 from job_research.jobspy_scraper import JobSpyScraper
 from job_research.sources.bundesagentur import BundesagenturScraper
 from job_research.store import JobStore
 from job_research.orchestrator import JobScraper, Orchestrator
-from job_research.scraper import ClaudeScraper
+from job_research.providers import AnthropicProvider, OpenRouterProvider, SearchProvider
+from job_research.scraper import LLMScraper
 from job_research.utils import generate_output_filename
 from ui.log_capture import LogCaptureHandler
 
@@ -29,31 +30,52 @@ _config = Config.from_env()
 _store = JobStore(_config.output.store_path)
 
 
+def _build_provider(config: Config) -> SearchProvider | None:
+    """The LLM vendor the search backend will use, or None if unconfigured.
+
+    Only the *selected* provider is considered. Quietly falling back to the
+    other one because its key happens to be present would bill an account the
+    operator did not choose for this run, so a missing key disables the
+    backend and says which variable to set.
+    """
+    if config.llm_provider is LLMProvider.OPENROUTER:
+        if config.openrouter_api_key:
+            return OpenRouterProvider(
+                api_key=config.openrouter_api_key,
+                model=config.openrouter_model,
+                max_results=config.openrouter_search_results,
+                engine=config.openrouter_search_engine,
+            )
+        logger.info("No OPENROUTER_API_KEY — the LLM backend is unavailable")
+        return None
+
+    if config.claude_api_key:
+        return AnthropicProvider(api_key=config.claude_api_key, model=config.claude_model)
+    logger.info("No CLAUDE_API_KEY — the LLM backend is unavailable")
+    return None
+
+
 def _build_scrapers(config: Config) -> dict[Backend, JobScraper]:
     """Every backend that can actually run, given what is configured.
 
     jobspy and Bundesagentur need no credentials, so they are always available;
-    Claude needs an API key and is simply absent without one.
+    the LLM backend needs its provider's API key and is simply absent without one.
     """
     scrapers: dict[Backend, JobScraper] = {
         Backend.JOBSPY: JobSpyScraper(max_jobs=config.max_jobs_per_search),
         Backend.BUNDESAGENTUR: BundesagenturScraper(max_jobs=config.max_jobs_per_search),
     }
-    if config.claude_api_key:
-        scrapers[Backend.CLAUDE] = ClaudeScraper(
-            api_key=config.claude_api_key,
-            model=config.claude_model,
-            max_jobs=config.max_jobs_per_search,
-        )
-    else:
-        logger.info("No CLAUDE_API_KEY — the Claude backend is unavailable")
+    provider = _build_provider(config)
+    if provider is not None:
+        logger.info("LLM backend served by %s (model %s)", provider.name, provider.model)
+        scrapers[Backend.LLM] = LLMScraper(provider, max_jobs=config.max_jobs_per_search)
     return scrapers
 
 
 _PREFERRED_BACKEND = {
     ScraperBackend.JOBSPY: Backend.JOBSPY,
     ScraperBackend.BUNDESAGENTUR: Backend.BUNDESAGENTUR,
-    ScraperBackend.CLAUDE: Backend.CLAUDE,
+    ScraperBackend.LLM: Backend.LLM,
 }[_config.scraper_backend]
 
 _scrapers = _build_scrapers(_config)
@@ -408,14 +430,19 @@ def create_ui() -> gr.Blocks:
                 - **bundesagentur** — the federal job board's own API. No API key.
                   The largest German corpus, and the only source with structured
                   salary. Unofficial endpoint — see `docs/decisions/001-...`.
-                - **claude** — Anthropic web search, restricted per source.
-                  Reaches boards the other two cannot (StepStone, Monster,
-                  Honeypot, startup.jobs). Requires `CLAUDE_API_KEY` and costs
-                  money per search, so it is used only where nothing free can
-                  reach the source.
+                - **llm** — an LLM's web search, restricted per source. Reaches
+                  boards the other two cannot (StepStone, Monster, Honeypot,
+                  startup.jobs). Costs money per search, so it is used only
+                  where nothing free can reach the source. `LLM_PROVIDER`
+                  picks who serves it: `openrouter` (default — set
+                  `OPENROUTER_API_KEY`, pick any model with `OPENROUTER_MODEL`)
+                  or `anthropic` (the Claude API directly — set
+                  `CLAUDE_API_KEY`). Without the selected provider's key this
+                  backend is simply absent.
 
                 `SCRAPER_BACKEND` sets a *preference*: it wins wherever it can
-                serve a source, and the rest fall back to whatever can.
+                serve a source, and the rest fall back to whatever can. It still
+                accepts `claude`, which now means `llm`.
 
                 Each run reports what every source returned, so a source that
                 failed is visible rather than looking like a quiet job market.

@@ -10,7 +10,7 @@ from job_research.config import JobSearchParams
 from job_research.orchestrator import Orchestrator, assign_backends
 from job_research.sources import Backend, catalog
 
-ALL = {Backend.JOBSPY, Backend.BUNDESAGENTUR, Backend.CLAUDE}
+ALL = {Backend.JOBSPY, Backend.BUNDESAGENTUR, Backend.LLM}
 
 
 def _sources(*ids: str) -> tuple:
@@ -30,8 +30,8 @@ def test_each_source_goes_to_a_backend_that_can_reach_it():
 
 def test_the_preferred_backend_wins_where_it_can_serve_the_source():
     """SCRAPER_BACKEND must still mean something."""
-    assignments, _ = assign_backends(_sources("indeed"), ALL, preferred=Backend.CLAUDE)
-    assert Backend.CLAUDE in assignments
+    assignments, _ = assign_backends(_sources("indeed"), ALL, preferred=Backend.LLM)
+    assert Backend.LLM in assignments
     assert Backend.JOBSPY not in assignments
 
 
@@ -46,13 +46,13 @@ def test_the_preferred_backend_is_ignored_where_it_cannot_serve_the_source():
 def test_free_backends_are_preferred_over_the_metered_one():
     """Claude costs money per search, so it must not be a silent default route."""
     assignments, _ = assign_backends(_sources("indeed", "arbeitsagentur"), ALL)
-    assert Backend.CLAUDE not in assignments
+    assert Backend.LLM not in assignments
 
 
-def test_claude_is_used_when_it_is_the_only_backend_that_can_reach_a_source():
+def test_llm_backend_is_used_when_it_is_the_only_one_that_can_reach_a_source():
     assignments, skipped = assign_backends(_sources("stepstone"), ALL)
     assert skipped == []
-    assert {s.id for s in assignments[Backend.CLAUDE]} == {"stepstone"}
+    assert {s.id for s in assignments[Backend.LLM]} == {"stepstone"}
 
 
 def test_an_unreachable_source_is_skipped_with_a_reason():
@@ -62,7 +62,7 @@ def test_an_unreachable_source_is_skipped_with_a_reason():
     )
     assert assignments == {}
     assert len(skipped) == 1
-    assert "claude" in skipped[0].skipped
+    assert "llm" in skipped[0].skipped
     assert not skipped[0].ok
 
 

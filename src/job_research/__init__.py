@@ -4,7 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from job_research.analyzer import JobAnalyzer
 from job_research.config import Config, JobSearchParams
-from job_research.scraper import ClaudeScraper
+from job_research.scraper import LLMScraper
 
 try:
     __version__ = version("job-research")
@@ -13,4 +13,4 @@ except PackageNotFoundError:  # running from a source tree without an install
 
 __author__ = "Marco Braun"
 
-__all__ = ["Config", "JobSearchParams", "JobAnalyzer", "ClaudeScraper", "__version__"]
+__all__ = ["Config", "JobSearchParams", "JobAnalyzer", "LLMScraper", "__version__"]

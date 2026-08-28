@@ -25,9 +25,10 @@ from job_research.sources import Backend, Source, catalog
 logger = logging.getLogger(__name__)
 
 # Tried in order when the preferred backend cannot serve a source. Free and
-# structured first, metered last: Claude costs money per search, so it is the
-# fallback rather than the default route to any source.
-_FALLBACK_ORDER = (Backend.BUNDESAGENTUR, Backend.JOBSPY, Backend.CLAUDE)
+# structured first, metered last: the LLM backend costs money per search
+# whichever provider serves it, so it is the fallback rather than the default
+# route to any source.
+_FALLBACK_ORDER = (Backend.BUNDESAGENTUR, Backend.JOBSPY, Backend.LLM)
 
 
 class JobScraper(Protocol):

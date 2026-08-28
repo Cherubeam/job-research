@@ -19,12 +19,22 @@ from enum import Enum
 class Backend(str, Enum):
     """A way of reaching job listings."""
 
-    CLAUDE = "claude"
-    """Anthropic web search, restricted to a source's domain."""
+    LLM = "llm"
+    """An LLM's web search, restricted to a source's domain. Served by whichever
+    provider is configured — OpenRouter or the Anthropic API. See `providers`."""
     JOBSPY = "jobspy"
     """python-jobspy, which scrapes a fixed set of boards directly."""
     BUNDESAGENTUR = "bundesagentur"
     """The federal job board's own search endpoint. See ADR-001."""
+
+    @classmethod
+    def _missing_(cls, value: object) -> "Backend | None":
+        """Accept `claude`, the name this backend had before it grew providers.
+
+        Kept so an existing `SCRAPER_BACKEND=claude` keeps selecting the LLM
+        backend rather than failing at startup.
+        """
+        return cls.LLM if value == "claude" else None
 
 
 @dataclass(frozen=True)
@@ -38,7 +48,7 @@ class Source:
     job_url_pattern: re.Pattern[str]
     """Matches an *individual listing* URL, so search and category pages are rejected."""
     search_hint: str = ""
-    """Guidance handed to the Claude backend's system prompt."""
+    """Guidance handed to the LLM backend's system prompt."""
     jobspy_site: str | None = None
     """This source's name in python-jobspy's `site_name`, when it supports it."""
     default_enabled: bool = False
@@ -54,13 +64,13 @@ class Source:
 
 # Google Jobs links out to the original posting — LinkedIn, a company careers
 # page, anywhere — so there is no single domain to recognise. The pattern only
-# matters for the Claude backend's URL validation, and Google is not reachable
+# matters for the LLM backend's URL validation, and Google is not reachable
 # that way, so a permissive one is honest rather than a fiction.
 _ANY_URL = re.compile(r"^https?://")
 
-_BOTH = frozenset({Backend.CLAUDE, Backend.JOBSPY})
+_BOTH = frozenset({Backend.LLM, Backend.JOBSPY})
 _JOBSPY_ONLY = frozenset({Backend.JOBSPY})
-_CLAUDE_ONLY = frozenset({Backend.CLAUDE})
+_LLM_ONLY = frozenset({Backend.LLM})
 
 
 _SOURCES: tuple[Source, ...] = (
@@ -110,7 +120,7 @@ _SOURCES: tuple[Source, ...] = (
         id="stepstone",
         label="StepStone.de",
         domain="stepstone.de",
-        backends=_CLAUDE_ONLY,
+        backends=_LLM_ONLY,
         job_url_pattern=re.compile(r"stepstone\.de/(stellenangebote--|jobs/\d)"),
         search_hint=(
             "For StepStone: individual job URLs contain /stellenangebote-- or /jobs/<id>."
@@ -120,7 +130,7 @@ _SOURCES: tuple[Source, ...] = (
         id="monster",
         label="Monster.de",
         domain="monster.de",
-        backends=_CLAUDE_ONLY,
+        backends=_LLM_ONLY,
         job_url_pattern=re.compile(r"monster\.de/.*job"),
         search_hint="For Monster: look for URLs containing 'job' in the path.",
     ),
@@ -128,7 +138,7 @@ _SOURCES: tuple[Source, ...] = (
         id="honeypot",
         label="Honeypot.io",
         domain="honeypot.io",
-        backends=_CLAUDE_ONLY,
+        backends=_LLM_ONLY,
         job_url_pattern=re.compile(r"honeypot\.io/"),
         search_hint="For Honeypot: any honeypot.io URL with a path is acceptable.",
     ),
@@ -136,7 +146,7 @@ _SOURCES: tuple[Source, ...] = (
         id="startups",
         label="startup.jobs",
         domain="startup.jobs",
-        backends=_CLAUDE_ONLY,
+        backends=_LLM_ONLY,
         job_url_pattern=re.compile(r"startup\.jobs/"),
         search_hint="For startup.jobs: any startup.jobs URL with a path is acceptable.",
     ),
@@ -144,7 +154,7 @@ _SOURCES: tuple[Source, ...] = (
         id="arbeitsagentur",
         label="Arbeitsagentur.de",
         domain="arbeitsagentur.de",
-        backends=frozenset({Backend.CLAUDE, Backend.BUNDESAGENTUR}),
+        backends=frozenset({Backend.LLM, Backend.BUNDESAGENTUR}),
         default_enabled=True,
         job_url_pattern=re.compile(r"arbeitsagentur\.de/"),
         search_hint="For Arbeitsagentur: any arbeitsagentur.de URL with a path is acceptable.",

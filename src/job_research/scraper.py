@@ -1,23 +1,31 @@
-"""Claude API web search scraper for job listings"""
+"""LLM web-search scraper for job listings.
+
+Reaches the boards no structured API covers (StepStone, Monster, Honeypot,
+startup.jobs) by asking a model to search them and return JSON. The vendor
+behind that search — OpenRouter or the Anthropic API — is a `providers`
+concern; everything here is the same whichever one is configured.
+"""
 
 import json
 import logging
 import re
-import time
 from pathlib import Path
 from collections.abc import Sequence
-from typing import Optional, Protocol
+from typing import Protocol
 from urllib.parse import urlparse, urlunparse
 
-import anthropic
 from pydantic import ValidationError
 
 from job_research.analyzer import JobListing
 from job_research.config import JobSearchParams
+from job_research.providers import SearchProvider, SearchResponse
 from job_research.sources import Backend, Source, catalog
 from job_research.utils import create_cache_key, load_cache, save_cache
 
 logger = logging.getLogger(__name__)
+
+MAX_SEARCHES = 10
+"""Searches the model may run per request. Each one costs money."""
 
 
 class JobScraper(Protocol):
@@ -31,14 +39,16 @@ class JobScraper(Protocol):
     ) -> list[JobListing]: ...
 
 
-class ClaudeScraper:
-    """Searches for job listings using the Claude API with the web_search_20250305 tool."""
+class LLMScraper:
+    """Searches for job listings by asking an LLM to search the web.
 
-    def __init__(self, api_key: str, model: str, max_jobs: int = 20) -> None:
-        self._client = anthropic.Anthropic(api_key=api_key, max_retries=0)
-        self._model = model
+    Takes a configured `SearchProvider` rather than credentials: which vendor
+    serves the search is decided once, at startup, in `ui.app`.
+    """
+
+    def __init__(self, provider: SearchProvider, max_jobs: int = 20) -> None:
+        self._provider = provider
         self._max_jobs = max_jobs
-        self._last_call_time: float = 0.0
 
     # ------------------------------------------------------------------ public
 
@@ -53,15 +63,20 @@ class ClaudeScraper:
         Returns every listing found. Salary/seniority filtering, interleaving,
         and truncation happen downstream in `pipeline.apply`.
         """
-        sources = catalog.resolve(params.enabled_sources, Backend.CLAUDE)
+        sources = catalog.resolve(params.enabled_sources, Backend.LLM)
         if not sources:
             raise RuntimeError(
-                "No sources selected that the Claude backend can search. "
-                f"Available: {', '.join(s.id for s in catalog.for_backend(Backend.CLAUDE))}"
+                "No sources selected that the LLM backend can search. "
+                f"Available: {', '.join(s.id for s in catalog.for_backend(Backend.LLM))}"
             )
 
+        # Provider and model are part of the key: the same query answered by a
+        # different model is a different fetch, and serving one from the
+        # other's cache would silently hide the switch.
         cache_key = create_cache_key(
-            "claude_web_search",
+            "llm_web_search",
+            provider=self._provider.name,
+            model=self._provider.model,
             keywords=params.keywords,
             location=params.location,
             work_type=params.work_type.value,
@@ -105,63 +120,6 @@ class ClaudeScraper:
             query_parts.append(params.work_type.value)
         return " ".join(query_parts)
 
-    def _rate_limit(self) -> None:
-        elapsed = time.time() - self._last_call_time
-        if elapsed < 2.0:
-            time.sleep(2.0 - elapsed)
-        self._last_call_time = time.time()
-
-    def _get_retry_after(self, exc: anthropic.RateLimitError) -> int:
-        """Parse retry-after header from a 429 response, defaulting to 60s."""
-        retry_after = exc.response.headers.get("retry-after")
-        if retry_after:
-            try:
-                return max(int(float(retry_after)), 1)
-            except (ValueError, TypeError):
-                pass
-        return 60
-
-    def _make_api_call(
-        self,
-        messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        max_tokens: int = 4096,
-        system: Optional[str] = None,
-    ) -> anthropic.types.Message:
-        self._rate_limit()
-        for attempt in range(3):
-            try:
-                kwargs: dict = {
-                    "model": self._model,
-                    "max_tokens": max_tokens,
-                    "messages": messages,
-                }
-                if tools:
-                    kwargs["tools"] = tools
-                if system:
-                    kwargs["system"] = system
-                response: anthropic.types.Message = self._client.messages.create(**kwargs)
-                return response
-            except anthropic.RateLimitError as exc:
-                if attempt == 2:
-                    raise
-                retry_after = self._get_retry_after(exc)
-                logger.warning(
-                    "Rate limited (attempt %d) — retrying in %ds",
-                    attempt + 1,
-                    retry_after,
-                )
-                time.sleep(retry_after)
-            except anthropic.APIStatusError as exc:
-                if attempt == 2:
-                    raise
-                wait = 2**attempt
-                logger.warning(
-                    "API error (attempt %d): %s — retrying in %ds", attempt + 1, exc, wait
-                )
-                time.sleep(wait)
-        raise RuntimeError("unreachable")
-
     def _extract_json(self, text: str) -> list | None:
         """Try to parse a JSON array from text, return None on failure."""
         try:
@@ -181,25 +139,16 @@ class ClaudeScraper:
         return None
 
     @staticmethod
+    def _strip_fences(text: str) -> str:
+        """Drop markdown code fences the model wrapped its JSON in."""
+        return re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
+
+    @staticmethod
     def _normalize_url(url: str) -> str:
         """Normalize a URL for comparison: strip fragment, trailing slash."""
         parsed = urlparse(url)
         path = parsed.path.rstrip("/")
         return urlunparse((parsed.scheme, parsed.netloc, path, parsed.params, parsed.query, ""))
-
-    @staticmethod
-    def _extract_search_result_urls(response: anthropic.types.Message) -> set[str]:
-        """Extract ground-truth URLs from web_search_tool_result blocks."""
-        urls: set[str] = set()
-        for block in response.content:
-            if getattr(block, "type", None) != "web_search_tool_result":
-                continue
-            for result in getattr(block, "content", []):
-                if getattr(result, "type", None) == "web_search_result":
-                    url = getattr(result, "url", None)
-                    if url:
-                        urls.add(url)
-        return urls
 
     @staticmethod
     def _validate_listing_urls(
@@ -212,13 +161,13 @@ class ClaudeScraper:
             logger.warning("No search result URLs — skipping validation")
             return listings
 
-        normalized_search = {ClaudeScraper._normalize_url(u) for u in search_urls}
+        normalized_search = {LLMScraper._normalize_url(u) for u in search_urls}
 
         kept = []
         for listing in listings:
             if not listing.job_url:
                 continue
-            norm_url = ClaudeScraper._normalize_url(listing.job_url)
+            norm_url = LLMScraper._normalize_url(listing.job_url)
             in_search = norm_url in normalized_search
             matches_pattern = any(s.is_job_listing_url(listing.job_url) for s in sources)
 
@@ -238,7 +187,8 @@ class ClaudeScraper:
         platform_hints = "\n".join(f"- {s.search_hint}" for s in sources if s.search_hint)
         return (
             "You are a job search assistant. Search German job boards using the "
-            "web_search tool. You have up to 10 searches — use them strategically:\n\n"
+            f"web search tool. You have up to {MAX_SEARCHES} searches — use them "
+            "strategically:\n\n"
             "1. Start with a broad search to find relevant pages.\n"
             "2. If results are search/category pages, do follow-up searches to find "
             "individual job listing pages. For each promising job, search for:\n"
@@ -253,7 +203,7 @@ class ClaudeScraper:
             "  salary_min (integer or null), salary_max (integer or null),\n"
             "  work_type (string), job_board (string), job_url (string).\n\n"
             "Rules:\n"
-            "- job_url MUST be copied verbatim from a web_search result — never construct or guess a URL.\n"
+            "- job_url MUST be copied verbatim from a web search result — never construct or guess a URL.\n"
             "- Only include job listings whose URL points to an individual job page, not a search/category page.\n"
             "- Set salary fields to null unless the search result explicitly states a salary.\n"
             '- Skip job listings whose page indicates the position is expired, removed, or no longer available (e.g. "abgelaufen", "nicht mehr verfügbar").\n'
@@ -265,59 +215,45 @@ class ClaudeScraper:
         self, query: str, sources: "Sequence[Source]"
     ) -> tuple[list[JobListing], int]:
         """Single API call: web search + JSON extraction in one prompt."""
-        tools = [
-            {
-                "type": "web_search_20250305",
-                "name": "web_search",
-                "max_uses": 10,
-                "allowed_domains": [s.domain for s in sources],
-                "user_location": {
-                    "type": "approximate",
-                    "country": "DE",
-                },
-            }
-        ]
         system = self._build_system_prompt(sources)
         user_message = f"Search for {query} job listings and extract what you find"
-        messages = [{"role": "user", "content": user_message}]
-        response = self._make_api_call(messages, tools=tools, system=system)
+        response: SearchResponse = self._provider.search(
+            system=system,
+            messages=[{"role": "user", "content": user_message}],
+            allowed_domains=[s.domain for s in sources],
+            max_searches=MAX_SEARCHES,
+        )
 
-        search_urls = self._extract_search_result_urls(response)
-        logger.info("Found %d ground-truth URLs from web_search results", len(search_urls))
+        logger.info("Found %d ground-truth URLs from web search results", len(response.result_urls))
 
-        raw_text = "\n\n".join(block.text for block in response.content if block.type == "text")
+        raw_text = response.text
         if not raw_text.strip():
             raise RuntimeError(
-                "Claude API returned no text content. "
+                f"The {self._provider.name} provider returned no text content. "
                 "The web search may have failed or returned only tool-use blocks."
             )
         logger.info("API response: %d chars of text", len(raw_text))
         logger.debug("Raw API response text: %.500s", raw_text)
 
-        # Strip markdown fences if present
-        text = re.sub(r"```(?:json)?\s*", "", raw_text).strip().rstrip("`").strip()
-
-        data = self._extract_json(text)
+        data = self._extract_json(self._strip_fences(raw_text))
         if data is None:
             # Model returned narrative instead of JSON — send follow-up turn
             logger.warning("Response was not JSON, sending follow-up extraction request")
-            follow_up_messages = [
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": raw_text},
-                {
-                    "role": "user",
-                    "content": (
-                        "Now output ONLY the JSON array of job listings you found. "
-                        "No commentary, no markdown fences — just the raw JSON array."
-                    ),
-                },
-            ]
-            retry_response = self._make_api_call(follow_up_messages, max_tokens=4096, system=system)
-            retry_text = "\n\n".join(
-                block.text for block in retry_response.content if block.type == "text"
+            retry_text = self._provider.complete(
+                system=system,
+                messages=[
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": raw_text},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Now output ONLY the JSON array of job listings you found. "
+                            "No commentary, no markdown fences — just the raw JSON array."
+                        ),
+                    },
+                ],
             )
-            retry_text = re.sub(r"```(?:json)?\s*", "", retry_text).strip().rstrip("`").strip()
-            data = self._extract_json(retry_text)
+            data = self._extract_json(self._strip_fences(retry_text))
             if data is None:
                 raise RuntimeError(f"Failed to parse job listings after retry: {retry_text[:200]}")
 
@@ -332,6 +268,6 @@ class ClaudeScraper:
         if skipped:
             logger.info("Skipped %d/%d items (validation failed)", skipped, len(data))
 
-        listings = self._validate_listing_urls(listings, search_urls, sources)
+        listings = self._validate_listing_urls(listings, response.result_urls, sources)
 
         return listings, len(data)

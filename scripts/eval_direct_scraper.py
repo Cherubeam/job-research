@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Evaluate JobSpyScraper result quality and optionally compare with Claude scraper.
+"""Evaluate JobSpyScraper result quality and optionally compare with the LLM scraper.
 
 Usage:
     uv run python scripts/eval_direct_scraper.py "AI Engineer" "Berlin"
     uv run python scripts/eval_direct_scraper.py "Data Scientist" "Munich" --work-type "Remote only"
 
-Set CLAUDE_API_KEY to also run the Claude scraper for side-by-side comparison.
+Set the configured provider's API key (OPENROUTER_API_KEY by default) to also run
+the LLM scraper for side-by-side comparison.
 """
 
 import argparse
@@ -16,8 +17,26 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from job_research.config import Config, JobSearchParams, WorkType
+from job_research.config import Config, JobSearchParams, LLMProvider, WorkType
 from job_research.jobspy_scraper import JobSpyScraper
+from job_research.providers import AnthropicProvider, OpenRouterProvider, SearchProvider
+from job_research.scraper import LLMScraper
+
+
+def _provider(config: Config) -> SearchProvider | None:
+    """The configured LLM provider, or None when its key is absent."""
+    if config.llm_provider is LLMProvider.OPENROUTER:
+        if not config.openrouter_api_key:
+            return None
+        return OpenRouterProvider(
+            api_key=config.openrouter_api_key,
+            model=config.openrouter_model,
+            max_results=config.openrouter_search_results,
+            engine=config.openrouter_search_engine,
+        )
+    if not config.claude_api_key:
+        return None
+    return AnthropicProvider(api_key=config.claude_api_key, model=config.claude_model)
 
 
 def _field_coverage(listings: list) -> dict[str, int]:
@@ -86,46 +105,40 @@ def main() -> None:
         print(f"     {desc_preview}")
         print()
 
-    # --- Claude comparison (optional) ---
-    if config.claude_api_key:
+    # --- LLM backend comparison (optional) ---
+    provider = _provider(config)
+    if provider is not None:
         print("=" * 60)
-        print("ClaudeScraper (comparison)")
+        print(f"LLMScraper via {provider.name} ({provider.model}) — comparison")
         print("=" * 60)
 
-        from job_research.scraper import ClaudeScraper
-
-        claude_scraper = ClaudeScraper(
-            api_key=config.claude_api_key,
-            model=config.claude_model,
-            max_jobs=args.max_jobs,
-            board_config=config.job_boards,
-        )
+        llm_scraper = LLMScraper(provider, max_jobs=args.max_jobs)
         try:
-            claude_listings = claude_scraper.search_jobs(params, cache_dir, cache_duration_hours=0)
+            llm_listings = llm_scraper.search_jobs(params, cache_dir, cache_duration_hours=0)
         except RuntimeError as exc:
             print(f"ERROR: {exc}")
             return
 
-        print(f"\nFound {len(claude_listings)} listings\n")
-        claude_coverage = _field_coverage(claude_listings)
-        claude_total = len(claude_listings)
+        print(f"\nFound {len(llm_listings)} listings\n")
+        llm_coverage = _field_coverage(llm_listings)
+        llm_total = len(llm_listings)
         print("--- Field coverage ---")
-        for field, count in claude_coverage.items():
-            pct = (count / claude_total * 100) if claude_total else 0
-            print(f"  {field:15s}: {count}/{claude_total} ({pct:.0f}%)")
+        for field, count in llm_coverage.items():
+            pct = (count / llm_total * 100) if llm_total else 0
+            print(f"  {field:15s}: {count}/{llm_total} ({pct:.0f}%)")
 
         # Side-by-side summary
         print(f"\n{'=' * 60}")
         print("Side-by-side summary")
         print(f"{'=' * 60}")
-        print(f"  {'':15s}  JobSpy   Claude")
-        print(f"  {'Listings':15s}  {total:<8d} {claude_total}")
+        print(f"  {'':15s}  JobSpy   LLM")
+        print(f"  {'Listings':15s}  {total:<8d} {llm_total}")
         for field in coverage:
             i_count = coverage[field]
-            c_count = claude_coverage[field]
+            c_count = llm_coverage[field]
             print(f"  {field:15s}  {i_count:<8d} {c_count}")
     else:
-        print("\n(Set CLAUDE_API_KEY to also run Claude scraper for comparison)")
+        print("\n(Set the configured provider's API key to also run the LLM scraper)")
 
 
 if __name__ == "__main__":

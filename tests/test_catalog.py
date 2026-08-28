@@ -24,8 +24,8 @@ def test_jobspy_capable_sources_declare_a_site_name():
         assert source.jobspy_site, f"{source.id} claims jobspy support but has no jobspy_site"
 
 
-def test_claude_capable_sources_declare_a_search_hint():
-    for source in catalog.for_backend(Backend.CLAUDE):
+def test_llm_capable_sources_declare_a_search_hint():
+    for source in catalog.for_backend(Backend.LLM):
         assert source.search_hint, f"{source.id} has no search hint for the Claude prompt"
 
 
@@ -76,9 +76,9 @@ def test_get_raises_a_helpful_error_for_an_unknown_id():
 
 def test_for_backend_filters_by_capability():
     jobspy_ids = {s.id for s in catalog.for_backend(Backend.JOBSPY)}
-    claude_ids = {s.id for s in catalog.for_backend(Backend.CLAUDE)}
+    llm_ids = {s.id for s in catalog.for_backend(Backend.LLM)}
     assert jobspy_ids == {"indeed", "linkedin", "google"}
-    assert "stepstone" in claude_ids
+    assert "stepstone" in llm_ids
     assert "stepstone" not in jobspy_ids
 
 
@@ -92,18 +92,18 @@ def test_resolve_keeps_only_what_the_backend_can_reach():
 
 
 def test_resolve_preserves_the_requested_order():
-    resolved = catalog.resolve(["linkedin", "indeed"], Backend.CLAUDE)
+    resolved = catalog.resolve(["linkedin", "indeed"], Backend.LLM)
     assert [s.id for s in resolved] == ["linkedin", "indeed"]
 
 
 def test_resolve_raises_on_an_unknown_id():
     """A backend mismatch is expected; a typo is a configuration error."""
     with pytest.raises(catalog.UnknownSourceError):
-        catalog.resolve(["indeed", "nope"], Backend.CLAUDE)
+        catalog.resolve(["indeed", "nope"], Backend.LLM)
 
 
 def test_resolve_of_nothing_is_empty():
-    assert catalog.resolve([], Backend.CLAUDE) == ()
+    assert catalog.resolve([], Backend.LLM) == ()
 
 
 # ------------------------------------------------------------ URL patterns

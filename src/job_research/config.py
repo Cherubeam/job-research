@@ -92,9 +92,21 @@ class OutputFormat(str, Enum):
 class ScraperBackend(str, Enum):
     """Available scraper backends"""
 
-    CLAUDE = "claude"
+    LLM = "llm"
     JOBSPY = "jobspy"
     BUNDESAGENTUR = "bundesagentur"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "ScraperBackend | None":
+        """Accept `claude`, the name the LLM backend had before it grew providers."""
+        return cls.LLM if value == "claude" else None
+
+
+class LLMProvider(str, Enum):
+    """Who serves the LLM backend's web searches. See `providers`."""
+
+    OPENROUTER = "openrouter"
+    ANTHROPIC = "anthropic"
 
 
 @dataclass
@@ -147,6 +159,14 @@ class OutputConfig:
     email_recipient: Optional[str] = None
 
 
+SECRET_FIELDS: frozenset[str] = frozenset({"claude_api_key", "openrouter_api_key"})
+"""Config fields holding credentials: masked in `repr`, dropped from `to_dict`.
+
+Add every new provider credential here. A test asserts each field whose name
+ends in `_api_key` is listed, so the omission fails loudly rather than leaking.
+"""
+
+
 def mask_secret(value: Optional[str]) -> str:
     """Render a credential for display without revealing it.
 
@@ -168,7 +188,19 @@ class Config:
     search_params: JobSearchParams = field(default_factory=JobSearchParams)
     output: OutputConfig = field(default_factory=OutputConfig)
     verbose: bool = False
-    scraper_backend: ScraperBackend = ScraperBackend.CLAUDE
+    scraper_backend: ScraperBackend = ScraperBackend.LLM
+    llm_provider: LLMProvider = LLMProvider.OPENROUTER
+    """Which vendor serves the LLM backend. The other one stays configurable —
+    switching is an env var, not a code change."""
+    openrouter_api_key: Optional[str] = None
+    openrouter_model: str = "anthropic/claude-haiku-4.5"
+    openrouter_search_results: int = 10
+    """Results per web search. Not the same knob as Anthropic's `max_uses`,
+    which caps the number of *searches* — see `providers.OpenRouterProvider`."""
+    openrouter_search_engine: Optional[str] = None
+    """Pin OpenRouter's search engine (`exa`, `native`, ...). Unset lets
+    OpenRouter pick: native where the model has it, Exa otherwise. Worth
+    pinning to `exa` for models whose native search ignores domain filters."""
     claude_api_key: Optional[str] = None
     claude_model: str = "claude-haiku-4-5-20251001"
     max_jobs_per_search: int = 200
@@ -205,7 +237,12 @@ class Config:
             search_params=search_params,
             output=output,
             verbose=os.getenv("VERBOSE", "false").lower() == "true",
-            scraper_backend=ScraperBackend(os.getenv("SCRAPER_BACKEND", "claude")),
+            scraper_backend=ScraperBackend(os.getenv("SCRAPER_BACKEND", "llm")),
+            llm_provider=LLMProvider(os.getenv("LLM_PROVIDER", "openrouter")),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+            openrouter_model=os.getenv("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5"),
+            openrouter_search_results=int(os.getenv("OPENROUTER_SEARCH_RESULTS", "10")),
+            openrouter_search_engine=os.getenv("OPENROUTER_SEARCH_ENGINE") or None,
             claude_api_key=os.getenv("CLAUDE_API_KEY"),
             claude_model=os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
             max_jobs_per_search=int(os.getenv("MAX_JOBS_PER_SEARCH", "200")),
@@ -213,17 +250,19 @@ class Config:
         )
 
     def __repr__(self) -> str:
-        """Mask `claude_api_key`, so no traceback, log line, or bug report leaks it.
+        """Mask every credential, so no traceback, log line, or bug report leaks one.
 
         Built from `fields()` rather than written out, so it cannot drift as
-        fields are added. Note this protects incidental printing of the *config*;
-        `self.claude_api_key` is still the raw value for callers that need it.
+        fields are added — but `SECRET_FIELDS` still has to be extended by hand
+        when a provider brings a new credential. Note this protects incidental
+        printing of the *config*; the attributes themselves are still the raw
+        values for callers that need them.
         """
         rendered = [
             f"{f.name}="
             + (
-                mask_secret(self.claude_api_key)
-                if f.name == "claude_api_key"
+                mask_secret(getattr(self, f.name))
+                if f.name in SECRET_FIELDS
                 else repr(getattr(self, f.name))
             )
             for f in fields(self)
@@ -250,8 +289,8 @@ class Config:
 
         Generated from `fields()` so it cannot drift as fields are added — the
         hand-written version was already missing `scraper_backend`,
-        `claude_model`, `max_jobs_per_search`, and `interleave_sites`. The API
-        key is excluded: this is written to disk and pasted into issues.
+        `claude_model`, `max_jobs_per_search`, and `interleave_sites`. API keys
+        are excluded: this is written to disk and pasted into issues.
         """
 
         def _plain(value: object) -> object:
@@ -268,5 +307,5 @@ class Config:
         return {
             f.name: _plain(getattr(self, f.name))
             for f in fields(self)
-            if f.name != "claude_api_key"
+            if f.name not in SECRET_FIELDS
         }

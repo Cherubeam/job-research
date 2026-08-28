@@ -102,14 +102,14 @@ def test_rejects_inverted_salary_range():
 
 
 def test_a_source_no_backend_can_reach_is_reported_as_skipped(monkeypatch, isolated_output):
-    """StepStone needs the Claude backend; without it, say so rather than return nothing."""
+    """StepStone needs the LLM backend; without it, say so rather than return nothing."""
     install(monkeypatch, RecordingScraper([]), backends=(Backend.JOBSPY,))
 
     status, _, _, _ = _run(selected_sources=["stepstone"])
 
     assert "No listings returned" in status
     assert "StepStone.de: skipped" in status
-    assert "claude" in status
+    assert "llm" in status
 
 
 def test_surfaces_scraper_errors(monkeypatch, isolated_output):
