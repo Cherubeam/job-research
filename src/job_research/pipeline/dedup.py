@@ -4,7 +4,7 @@ Normalization lives in `job_research.identity`, shared with the job store so a
 posting's dedup identity and its stored id can never drift apart.
 
 One implementation for every backend. Previously each scraper had its own and
-they disagreed: `ClaudeScraper` keyed on the URL alone (so one job cross-posted
+they disagreed: `LLMScraper` (then `ClaudeScraper`) keyed on the URL alone (so one job cross-posted
 under two URLs survived twice), while `JobSpyScraper` keyed on title+company
 (so two genuinely different jobs at the same company collapsed into one).
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **OpenRouter as the default LLM provider** (`LLM_PROVIDER=openrouter`). The LLM search backend now runs on any model OpenRouter fronts, selected with `OPENROUTER_MODEL` (default `anthropic/claude-haiku-4.5`). The Anthropic API remains available with `LLM_PROVIDER=anthropic` — switching is an env var, not a code change.
+- `src/job_research/providers.py` — a `SearchProvider` abstraction with `OpenRouterProvider` and `AnthropicProvider`. Each returns the model's text **and** the URLs its search actually returned (`url_citation` annotations / `web_search_tool_result` blocks), which is what the scraper validates job links against.
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_SEARCH_RESULTS`, and `OPENROUTER_SEARCH_ENGINE` env vars.
+- `tests/test_providers.py` — domain restriction reaching each vendor, citation-URL extraction, retries, rate limits, and OpenRouter's HTTP-200-with-error responses.
 - **Google Jobs** as an opt-in source (`ENABLED_SOURCES=...,google`). An aggregator, so it reaches postings from boards this tool has no other route to. Off by default — see [ADR-003](decisions/003-google-jobs.md): it works by querying Google Search automatically, which Google's terms restrict.
 - The recency window now narrows the **jobspy fetch** too, via `hours_old`, matching what the Bundesagentur backend already did with `veroeffentlichtseit`.
 - **Multi-source orchestration** (`src/job_research/orchestrator.py`). Every selected source is now searched in one run: each is assigned to a backend that can reach it, the backends run concurrently, and results merge into one pipeline. Previously `SCRAPER_BACKEND` picked one backend and everything else was unreachable that run — with Indeed and the Bundesagentur both on by default, you got one of them.
@@ -44,7 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
-- `SCRAPER_BACKEND` is now a *preference* rather than an exclusive choice: it wins wherever it can serve a source, and everything else falls back to whatever can. Free backends are preferred over Claude, which costs money per search.
+- **The `claude` backend is now the `llm` backend.** `Backend.CLAUDE` → `Backend.LLM`, `ClaudeScraper` → `LLMScraper`, `SCRAPER_BACKEND=claude` → `SCRAPER_BACKEND=llm`. The name described a vendor, not a capability, and stopped being true once the backend could run on OpenRouter. `SCRAPER_BACKEND=claude` is still accepted and means `llm`, so existing `.env` files keep working.
+- `LLMScraper` takes a configured provider rather than an API key; all vendor-shaped code (retries, rate limiting, response parsing) moved to `providers.py`.
+- The LLM cache key now includes the provider and model, so changing `OPENROUTER_MODEL` re-fetches instead of replaying the previous model's results for 24 hours.
+- `Config.__repr__` and `Config.to_dict()` mask **every** credential via `config.SECRET_FIELDS`, not just `claude_api_key`. A test asserts each `*_api_key` field is listed.
+- `MAX_JOBS_PER_SEARCH` documented default corrected to 200 (the code default).
+- `scripts/eval_search_quality.py` and the comparison path in `scripts/eval_direct_scraper.py` rewritten against the provider API; both had been broken since the `boards.py` removal and could not import.
+- `SCRAPER_BACKEND` is now a *preference* rather than an exclusive choice: it wins wherever it can serve a source, and everything else falls back to whatever can. Free backends are preferred over the metered LLM backend, which costs money per search.
 - Research notes in `research/` corrected: the Bundesagentur endpoint is `pc/v6` (v4 was retired server-side and every example 404'd), the sample code reads `ergebnisliste`, and each document carries a status banner marking what the implementation has superseded.
 - `JobListing.posted_date` is now a `date` rather than a free string; unparseable values become `None` instead of failing the listing. Date parsing lives in `utils.parse_date`, used by every source.
 - Deduplication normalization moved to `identity.py`, shared with the store so a posting's dedup identity and its stored id cannot drift apart.

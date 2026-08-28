@@ -38,7 +38,14 @@ This will:
 cp .env.example .env
 ```
 
-Edit `.env` to set your `CLAUDE_API_KEY` and customize search defaults.
+Edit `.env` and set the key for whichever LLM provider you want:
+`OPENROUTER_API_KEY` (the default, `LLM_PROVIDER=openrouter`) or
+`CLAUDE_API_KEY` (`LLM_PROVIDER=anthropic`). Then customize search defaults.
+
+Neither is strictly required — the jobspy and bundesagentur backends need no
+key. Without a provider key the LLM backend is simply unavailable, and the
+boards only it can reach (StepStone, Monster, Honeypot, startup.jobs) are
+reported as skipped.
 
 ## Running the Application
 
@@ -73,7 +80,8 @@ job-research/
 │   ├── job_research/        # Core job research module
 │   │   ├── config.py        # Configuration management
 │   │   ├── analyzer.py      # Job data analysis
-│   │   ├── scraper.py       # Claude API web search scraper
+│   │   ├── providers.py     # OpenRouter / Anthropic web-search providers
+│   │   ├── scraper.py       # LLM web search scraper
 │   │   └── utils.py         # Utility functions
 │   └── ui/
 │       └── app.py           # Gradio web interface
@@ -144,12 +152,15 @@ uv sync
 
 ### Issue: Scraper returns no results
 
-**Solution:** Check that `CLAUDE_API_KEY` is set in your `.env` file.
+**Solution:** Check that the selected provider's key is set in your `.env` file —
+`OPENROUTER_API_KEY` for `LLM_PROVIDER=openrouter`, `CLAUDE_API_KEY` for
+`LLM_PROVIDER=anthropic`. The startup log names the one it could not find.
 
 ## Next Steps
 
 1. **Start the app**: `uv run python src/ui/app.py`
-2. **Set API key**: Edit `.env` and set `CLAUDE_API_KEY`
+2. **Set API key**: Edit `.env` and set `OPENROUTER_API_KEY` (or switch
+   `LLM_PROVIDER=anthropic` and set `CLAUDE_API_KEY`)
 3. **Try a search** with default parameters
 4. **Customize** the `.env` file with your preferences
 5. **Check README.md** for full documentation

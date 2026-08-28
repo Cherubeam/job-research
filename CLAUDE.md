@@ -2,7 +2,7 @@
 
 ## What This Project Does
 
-AI/ML job research tool that searches German job boards via the **Anthropic Claude API** (`web_search_20250305` tool). Results are analyzed and displayed in a Gradio web UI.
+AI/ML job research tool that searches German job boards through three backends: python-jobspy, the Bundesagentur für Arbeit API, and an **LLM web search** served by either **OpenRouter** (default) or the **Anthropic Claude API**. Results are analyzed and displayed in a Gradio web UI.
 
 ## How to Run
 
@@ -21,7 +21,8 @@ Custom port: `GRADIO_SERVER_PORT=7861 uv run python src/ui/app.py`
 ```
 src/job_research/   ← core logic package
   config.py         ← Config dataclass + env loading
-  scraper.py        ← ClaudeScraper (web_search_20250305)
+  providers.py      ← OpenRouterProvider / AnthropicProvider (web search)
+  scraper.py        ← LLMScraper (provider-agnostic search + extract)
   analyzer.py       ← JobListing + JobAnalyzer + reports
   utils.py          ← cache, salary formatting, text parsing
 
@@ -29,17 +30,23 @@ src/ui/
   app.py            ← Gradio UI + entry point (main())
 ```
 
-**Data flow:** Gradio UI → `run_job_research()` → `ClaudeScraper.search_jobs()` → `JobAnalyzer` → report string displayed in UI.
+**Data flow:** Gradio UI → `run_job_research()` → `Orchestrator.search()` → per-backend `search_jobs()` (the LLM one via a `SearchProvider`) → `pipeline.apply()` → `JobAnalyzer` → report string displayed in UI.
 
 ## Critical Environment Variables
 
 ```bash
-CLAUDE_API_KEY=      # Required — scraper won't work without it
-CLAUDE_MODEL=claude-haiku-4-5-20251001  # Optional, default: claude-haiku-4-5-20251001
-MAX_JOBS_PER_SEARCH=20         # Optional, default: 20
+LLM_PROVIDER=openrouter        # Optional, default: openrouter (or "anthropic")
+OPENROUTER_API_KEY=            # Required when LLM_PROVIDER=openrouter
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5  # Optional
+CLAUDE_API_KEY=                # Required when LLM_PROVIDER=anthropic
+CLAUDE_MODEL=claude-haiku-4-5-20251001       # Optional
+MAX_JOBS_PER_SEARCH=200        # Optional, default: 200
 ```
 
-Copy `.env.example` → `.env` and fill in `CLAUDE_API_KEY`.
+Copy `.env.example` → `.env` and fill in the selected provider's key. Without it
+the LLM backend is simply absent; jobspy and bundesagentur still work.
+
+`SCRAPER_BACKEND` still accepts the legacy value `claude`, which now means `llm`.
 
 ## Dev Commands
 

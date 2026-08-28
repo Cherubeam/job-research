@@ -10,12 +10,13 @@ AI-powered job market research tool for searching and analyzing job listings acr
 
 ## Overview
 
-Job Research Tool aggregates job listings from German job boards through two independent scraper backends — one powered by Anthropic's Claude API with web search, the other by the python-jobspy library. Results pass through a shared post-fetch pipeline (salary and seniority filtering, board interleaving, truncation) before being analyzed and displayed in an interactive Gradio web UI. Fetches are cached for 24 hours to minimize API costs on repeated queries.
+Job Research Tool aggregates job listings from German job boards through three independent scraper backends: the python-jobspy library, the Bundesagentur für Arbeit API, and an LLM web search served by either OpenRouter (default) or the Anthropic Claude API. Results pass through a shared post-fetch pipeline (salary and seniority filtering, board interleaving, truncation) before being analyzed and displayed in an interactive Gradio web UI. Fetches are cached for 24 hours to minimize API costs on repeated queries.
 
 ## Features
 
 - **Multi-Source Search**: every selected source is searched in **one run**, each through whichever backend can reach it, running concurrently
-- **Three Scraper Backends**: python-jobspy, the Bundesagentur für Arbeit API, and Claude API web search
+- **Three Scraper Backends**: python-jobspy, the Bundesagentur für Arbeit API, and LLM web search
+- **Swappable LLM Provider**: the LLM backend runs on OpenRouter (any model it fronts) or the Anthropic API directly — one env var, no code change
 - **Per-Source Health**: each run reports what every source returned, so a failing source is visible rather than looking like a quiet market
 - **Source Registry**: One place declares every board, which backends can reach it, and how to recognise its listing URLs. The UI offers only sources the active backend can actually search
 - **Relevance Scoring**: Titles are scored against your keywords and alternatives, with a configurable threshold and a negative-keyword list
@@ -36,7 +37,7 @@ Job Research Tool aggregates job listings from German job boards through two ind
 
 - Python 3.13+
 - `uv` package manager
-- Anthropic API key (for Claude-powered scraping)
+- An OpenRouter API key, or an Anthropic API key (only for the LLM backend; the other two need no key)
 
 ### Installation
 
@@ -53,7 +54,7 @@ Job Research Tool aggregates job listings from German job boards through two ind
 3. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env — set CLAUDE_API_KEY at minimum
+   # Edit .env — set OPENROUTER_API_KEY to enable the LLM backend
    ```
 
 ### Running the Application
@@ -78,11 +79,19 @@ Opens at **http://127.0.0.1:7860**
 
 Edit `.env`:
 ```bash
-# Required
-CLAUDE_API_KEY=sk-ant-...
+# LLM backend — pick a provider and set its key. Without one, the LLM backend
+# is absent and the free backends still work.
+LLM_PROVIDER=openrouter        # openrouter (default) or anthropic
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5   # any model OpenRouter fronts
+OPENROUTER_SEARCH_RESULTS=10   # results per search
+OPENROUTER_SEARCH_ENGINE=      # pin to `exa` for models whose native search
+                               # ignores domain filters (e.g. Gemini)
+CLAUDE_API_KEY=sk-ant-...      # used when LLM_PROVIDER=anthropic
+CLAUDE_MODEL=claude-haiku-4-5-20251001
 
 # Optional
-CLAUDE_MODEL=claude-haiku-4-5-20251001
+SCRAPER_BACKEND=llm            # preferred backend (`claude` still accepted)
 MAX_JOBS_PER_SEARCH=200        # max results to show (default 200)
 INTERLEAVE_SITES=true          # mix results from different job boards
 ENABLED_SOURCES=indeed,arbeitsagentur  # which boards to search
@@ -107,7 +116,11 @@ backends are preferred over the metered one for everything else.
 
 - **JobSpyScraper** — queries Indeed (and LinkedIn, if enabled) via python-jobspy. Free, no key, but relies on site structure staying put.
 - **BundesagenturScraper** — the federal job board's own search endpoint. Free, no key, the largest German corpus, and the only source here that exposes **structured salary** and server-side recency filtering. Unofficial endpoint — read [ADR-001](docs/decisions/001-bundesagentur-terms-of-use.md) before enabling.
-- **ClaudeScraper** — delegates search to Anthropic's `web_search_20250305` tool, cross-checking every extracted URL against the actual search results so nothing is fabricated. Reaches boards the other two cannot; costs API spend per search.
+- **LLMScraper** — asks a model to search each source's domain and return JSON, cross-checking every extracted URL against the search results the provider actually reported, so nothing is fabricated. Reaches boards the other two cannot; costs API spend per search. Which vendor serves it is a `providers` concern:
+  - **OpenRouter** (default) — one key reaches every model it fronts, via the `web` plugin (`include_domains`, `url_citation` annotations). Set `OPENROUTER_MODEL` to switch models.
+  - **Anthropic** — the Claude API's server-side `web_search` tool directly (`allowed_domains`, `web_search_tool_result` blocks).
+
+  Domain restriction is what makes per-source search work, and not every model's native search honours it — Anthropic's and OpenAI's do, Google's does not. With a Gemini model, pin `OPENROUTER_SEARCH_ENGINE=exa`.
 
 Both backends produce a common `JobListing` data model (Pydantic) and return the
 **full deduplicated fetch**, which is what gets cached. Everything that shapes the
@@ -148,7 +161,8 @@ Reporting that soundly needs per-query history, so the store reports *new* and
 Gradio UI → run_job_research() → Orchestrator
                ├── JobSpyScraper.search_jobs()        ─┐  (concurrent;
                ├── BundesagenturScraper.search_jobs() ─┤   cached: full fetch)
-               └── ClaudeScraper.search_jobs()        ─┤
+               └── LLMScraper.search_jobs()          ─┤
+                     └── OpenRouterProvider | AnthropicProvider
                                                  ▼
                                           pipeline.apply()
        (relevance → dedup → salary → recency → seniority → interleave → truncate)
@@ -158,7 +172,7 @@ Gradio UI → run_job_research() → Orchestrator
 
 ### Sources
 
-| Source | Claude backend | jobspy backend | Default |
+| Source | llm backend | jobspy backend | Default |
 |---|---|---|---|
 | Indeed.de | yes | yes | on |
 | LinkedIn | yes | yes | off — see [ADR-002](docs/decisions/002-linkedin-scraping.md) |
@@ -186,7 +200,8 @@ job-research/
 │   ├── job_research/
 │   │   ├── __init__.py
 │   │   ├── config.py           # Configuration management
-│   │   ├── scraper.py          # ClaudeScraper (Claude API web search)
+│   │   ├── providers.py        # OpenRouterProvider / AnthropicProvider
+│   │   ├── scraper.py          # LLMScraper (provider-agnostic search + extract)
 │   │   ├── jobspy_scraper.py   # JobSpyScraper (python-jobspy)
 │   │   ├── sources/            # Source registry + the Bundesagentur client
 │   │   ├── pipeline/           # Relevance, dedup, filters, interleaving
@@ -216,8 +231,8 @@ job-research/
 
 ## Dependencies
 
-- **anthropic** (0.49+) — Claude API with web search tool
-- **requests** (2.31+) — Bundesagentur Jobsuche client
+- **anthropic** (0.49+) — Claude API with web search tool (the `anthropic` provider)
+- **requests** (2.31+) — Bundesagentur Jobsuche client and the OpenRouter provider
 - **python-jobspy** (1.1+) — Direct job board scraping
 - **pydantic** (2.0+) — Data validation and job listing models
 - **gradio** (4.0+) — Web interface

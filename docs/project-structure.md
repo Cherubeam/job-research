@@ -16,7 +16,8 @@ The project is organized into three main layers:
                │
 ┌──────────────▼──────────────────────────────┐
 │      Job Research Module (Business Logic)   │
-│  config.py | scraper.py | analyzer.py       │
+│  config.py | providers.py | scraper.py |    │
+│  orchestrator.py | analyzer.py              │
 └──────────────┬──────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────┐
@@ -33,7 +34,7 @@ The project is organized into three main layers:
 **What it does:**
 - Creates the Gradio web interface that users interact with
 - Manages user input and displays results
-- Initializes `ClaudeScraper` at module level from environment config
+- Builds the configured `SearchProvider` and the backends at module level from environment config
 - Coordinates between the web UI and the business logic
 
 **Key components:**
@@ -58,22 +59,43 @@ The project is organized into three main layers:
 - `JobSearchParams` - Data structure for search parameters (keywords, location, salary, etc.)
 - `JobBoardConfig` - Which job boards to search
 - `OutputConfig` - Output settings (format, directory, caching)
-- `Config` - Main configuration class (includes `claude_api_key`, `claude_model`, `max_jobs_per_search`, `interleave_sites`)
+- `Config` - Main configuration class (includes `llm_provider`, `openrouter_api_key`, `openrouter_model`, `claude_api_key`, `claude_model`, `max_jobs_per_search`, `interleave_sites`)
+- `LLMProvider` - Enum: "openrouter" (default), "anthropic"
+- `ScraperBackend` - Enum: "llm", "jobspy", "bundesagentur" (accepts the legacy value "claude" as "llm")
+- `SECRET_FIELDS` - Credential field names, masked in `repr` and dropped from `to_dict()`
 
 ---
 
-### 3. **src/job_research/scraper.py** - Claude API Scraper
+### 3. **src/job_research/providers.py** - LLM Web-Search Providers
 **What it does:**
-- Implements `ClaudeScraper` using the Anthropic `web_search_20250305` tool
-- Delegates actual web fetching to Anthropic's infrastructure (no direct scraping)
-- Handles caching, rate limiting, retries with exponential backoff, and deduplication
+- Isolates everything vendor-shaped behind one `SearchProvider` protocol
+- Returns a `SearchResponse` carrying both the model's text **and** the URLs the
+  search actually returned — the scraper needs the second half to reject
+  fabricated job links
+- Handles per-provider rate limiting and retries (honouring `retry-after`)
 
-**Key class:** `ClaudeScraper`
+**Key classes:**
+- `OpenRouterProvider` — OpenRouter's `web` plugin over the OpenAI-compatible
+  chat endpoint. Domains via `include_domains`, URLs via `url_citation`
+  annotations. Default provider.
+- `AnthropicProvider` — the Claude API's server-side `web_search_20250305`
+  tool. Domains via `allowed_domains`, URLs via `web_search_tool_result` blocks.
+- `SearchResponse`, `SearchProvider`, `ProviderError`
+
+---
+
+### 3b. **src/job_research/scraper.py** - LLM Scraper
+**What it does:**
+- Implements `LLMScraper` on top of any `SearchProvider` — no vendor SDK here
+- Builds the system prompt (including per-source search hints), parses the JSON
+  the model returns, and validates every URL against the search results
+- Handles caching, keyed on provider and model so a model switch re-fetches
+
+**Key class:** `LLMScraper`
 - `search_jobs(params, cache_dir, cache_duration_hours)` → `list[JobListing]`
-- `_search_and_extract(query)` → single API call (web_search + JSON extraction)
-- `_extract_search_result_urls(response)` → ground-truth URL set from `web_search_tool_result` blocks
-- `_filter_to_search_results(listings, urls)` → discard listings with fabricated URLs
-- `_deduplicate_listings(listings)` → deduped list
+- `_search_and_extract(query, sources)` → one provider call (search + JSON extraction),
+  with a no-search follow-up call when the model answers in prose
+- `_validate_listing_urls(listings, urls, sources)` → discard fabricated and search-page URLs
 
 ---
 
@@ -97,7 +119,7 @@ The project is organized into three main layers:
 ---
 
 ### 6. **src/job_research/__init__.py** - Package Initialization
-- Exports: `Config`, `JobSearchParams`, `JobAnalyzer`, `ClaudeScraper`
+- Exports: `Config`, `JobSearchParams`, `JobAnalyzer`, `LLMScraper`
 
 ---
 
@@ -112,9 +134,12 @@ The project is organized into three main layers:
 
 **Important variables:**
 ```
-CLAUDE_API_KEY=          # Required for scraping
+LLM_PROVIDER=openrouter  # openrouter (default) or anthropic
+OPENROUTER_API_KEY=      # Required when LLM_PROVIDER=openrouter
+OPENROUTER_MODEL=anthropic/claude-haiku-4.5
+CLAUDE_API_KEY=          # Required when LLM_PROVIDER=anthropic
 CLAUDE_MODEL=claude-haiku-4-5-20251001
-MAX_JOBS_PER_SEARCH=20
+MAX_JOBS_PER_SEARCH=200
 ```
 
 ---
@@ -126,12 +151,12 @@ User Input (Gradio UI)
     ↓
 app.py: run_job_research()
     ↓
-ClaudeScraper.search_jobs()
-    ├─ Check cache (utils.load_cache)
+LLMScraper.search_jobs()
+    ├─ Check cache (utils.load_cache; keyed on provider + model)
     ├─ _build_search_query() → natural language query
-    ├─ _search_and_extract() → single API call (web_search + JSON)
-    │   ├─ _extract_search_result_urls() → ground-truth URLs
-    │   └─ _filter_to_search_results()   → discard fabricated URLs
+    ├─ _search_and_extract() → one provider.search() call (web search + JSON)
+    │   ├─ SearchResponse.result_urls   → ground-truth URLs from the provider
+    │   └─ _validate_listing_urls()     → discard fabricated URLs
     ├─ _deduplicate_listings()
     └─ Save cache (utils.save_cache)
     ↓
@@ -172,7 +197,8 @@ User sees results
 | `src/ui/app.py` | Web interface |
 | `src/ui/log_capture.py` | Thread-safe log capture for UI |
 | `src/job_research/config.py` | Configuration & data structures |
-| `src/job_research/scraper.py` | Claude API web search scraper |
+| `src/job_research/providers.py` | OpenRouter / Anthropic web-search providers |
+| `src/job_research/scraper.py` | LLM web search scraper |
 | `src/job_research/analyzer.py` | Analysis & reporting |
 | `src/job_research/utils.py` | Helper functions |
 | `pyproject.toml` | Dependencies |
