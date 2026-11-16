@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/ui/log_capture.py` — thread-safe `LogCaptureHandler` for capturing log messages into the UI.
 
 ### Changed
+- **`CLAUDE.md` renamed to `AGENTS.md`**, one instruction file that every coding harness reads. Claude Code reads `AGENTS.md` itself since v2.1.277; a `CLAUDE.md` in the repo would make it skip `AGENTS.md`. Content unchanged except the title. `docs/architecture-review.md` (finding F9, resolved) keeps the old name.
 - **The `claude` backend is now the `llm` backend.** `Backend.CLAUDE` → `Backend.LLM`, `ClaudeScraper` → `LLMScraper`, `SCRAPER_BACKEND=claude` → `SCRAPER_BACKEND=llm`. The name described a vendor, not a capability, and stopped being true once the backend could run on OpenRouter. `SCRAPER_BACKEND=claude` is still accepted and means `llm`, so existing `.env` files keep working.
 - `LLMScraper` takes a configured provider rather than an API key; all vendor-shaped code (retries, rate limiting, response parsing) moved to `providers.py`.
 - The LLM cache key now includes the provider and model, so changing `OPENROUTER_MODEL` re-fetches instead of replaying the previous model's results for 24 hours.

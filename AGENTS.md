@@ -1,4 +1,4 @@
-# Job Research Tool — Claude Code Context
+# Job Research Tool — Context for AI Coding Agents
 
 ## What This Project Does
 
